@@ -1,0 +1,252 @@
+<!--
+  Copyright (C) 2010-2014 The Project Lombok Authors.
+  
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+  
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+  
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+  THE SOFTWARE.
+-->
+<project name="lombok-website" basedir=".." default="website" xmlns:ivy="antlib:com.zwitserloot.ivyplusplus">
+	<description>
+This buildfile is part of projectlombok.org. It is responsible for building the website and all website-related aspects,
+such as applying the templates to produce the website, converting the changelog into HTML, and creating javadoc.
+	</description>
+	
+	<path id="build.path">
+		<fileset dir="lib/build">
+			<include name="**/*.jar" />
+		</fileset>
+	</path>
+	
+	<property name="SNIPPET_TAB_STOP" value="2" />
+	
+	<target name="-website-clean">
+		<delete dir="build/website" quiet="true" />
+	</target>
+	
+	<target name="website-only" description="Prepares the website for distribution using the lombok version currently 'live'." depends="-fetch-version-from-site, -show-version, -ensure-version, -website-main, -delete-edge-page" />
+	
+	<target name="-delete-edge-page">
+		<delete file="build/website/download-edge.html" />
+	</target>
+	
+	<target name="website" description="Prepares the website for distribution" depends="javadoc, -website-main" />
+	
+	<target name="website-supporters" description="Updates website supporters store and adds it to the website build.">
+		<ant antfile="buildScripts/supporters.ant.xml" target="deployToWebsiteBuild" inheritAll="false" />
+	</target>
+	
+	<target name="-fetch-version-from-site" depends="-compile-webclasses">
+		<fail if="lombok.version">lombok.version already set.</fail>
+		<fail if="lombok.fullversion">lombok.fullversion already set.</fail>
+		<java classname="lombok.website.FetchCurrentVersion" outputproperty="lombok.version" failonerror="true">
+			<classpath>
+				<path refid="build.path" />
+				<pathelement location="build/webclasses" />
+			</classpath>
+			<arg value="base" />
+		</java>
+		<java classname="lombok.website.FetchCurrentVersion" outputproperty="lombok.fullversion" failonerror="true">
+			<classpath>
+				<path refid="build.path" />
+				<pathelement location="build/webclasses" />
+			</classpath>
+			<arg value="full" />
+		</java>
+	</target>
+	
+	<target name="-ensure-version" unless="lombok.version">
+		<fail>Supply lombok.version</fail>
+	</target>
+	
+	<target name="-show-version">
+		<echo>Version: ${lombok.version}</echo>
+		<echo>Full: ${lombok.fullversion}</echo>
+	</target>
+		
+	<target name="-ensure-fullversion" unless="lombok.fullversion">
+		<fail>Supply lombok.fullversion</fail>
+	</target>
+	
+	<target name="-compile-webclasses">
+		<mkdir dir="build/webclasses" />
+		<javac includeDestClasses="false" includeantruntime="false" destdir="build/webclasses" debug="on" source="1.8" target="1.8">
+			<compilerarg value="-proc:none" />
+			<compilerarg value="-Xlint:-options" />
+			<classpath refid="build.path" />
+			<src path="src/website" />
+		</javac>
+	</target>
+	
+	<target name="changelogToHtml" depends="-compile-webclasses">
+		<mkdir dir="build/website" />
+		<java classname="lombok.website.WebsiteMaker" failonerror="true">
+			<classpath>
+				<path refid="build.path" />
+				<pathelement location="build/webclasses" />
+			</classpath>
+			<arg value="${lombok.version}" />
+			<arg value="${lombok.fullversion}" />
+			<arg value="changelog" />
+		</java>
+	</target>
+	
+	<target name="-website-main" depends="-ensure-version, -ensure-fullversion, -website-clean, -compile-webclasses, changelogToHtml">
+		<mkdir dir="build/website" />
+		<copy todir="build/website">
+			<fileset dir="website/resources" />
+			<fileset dir=".">
+				<include name="LICENSE" />
+			</fileset>
+		</copy>
+		<java classname="lombok.website.WebsiteMaker" failonerror="true">
+			<classpath>
+				<path refid="build.path" />
+				<pathelement location="build/webclasses" />
+			</classpath>
+			<arg value="${lombok.version}" />
+			<arg value="${lombok.fullversion}" />
+			<arg value="all" />
+		</java>
+	</target>
+	
+	<target name="-website-dist">
+		<mkdir dir="dist" />
+		<tar destfile="dist/website.tar.bz2" compression="bzip2">
+			<tarfileset dir="build/website" />
+			<tarfileset dir="doc/api" prefix="api" />
+		</tar>
+	</target>
+	
+	<target name="-website-only-dist">
+		<mkdir dir="dist" />
+		<tar destfile="dist/website.tar.bz2" compression="bzip2">
+			<tarfileset dir="build/website" />
+		</tar>
+	</target>
+	
+	<target name="website-publish" depends="website, website-supporters, -website-dist, -send-site-to-remote" />
+	<target name="website-only-publish" depends="website-only, website-supporters, -website-only-dist, -send-site-to-remote" />
+	<target name="-send-site-to-remote" depends="-requires-ssh">
+		<ivy:scpUpload
+			from="dist/website.tar.bz2"
+			to="/data/lombok/staging"
+			server="projectlombok.org"
+			username="${ssh.username}"
+			keyfile="${ssh.keyfile}"
+			knownHosts="ssh.knownHosts" />
+		<ivy:sshExec
+			cmd="/data/lombok/stagingCmd/deployWebsite"
+			server="projectlombok.org"
+			username="${ssh.username}"
+			keyfile="${ssh.keyfile}"
+			knownHosts="ssh.knownHosts" />
+	</target>
+	
+	<target name="latestChanges" depends="-compile-webclasses, -ensure-version, -ensure-fullversion">
+		<mkdir dir="build/website" />
+		<java classname="lombok.website.WebsiteMaker" failonerror="true">
+			<classpath>
+				<path refid="build.path" />
+				<pathelement location="build/webclasses" />
+			</classpath>
+			<arg value="${lombok.version}" />
+			<arg value="${lombok.fullversion}" />
+			<arg value="changelog-latest" />
+			<arg value="website" />
+			<arg value="build/latestchanges.html" />
+		</java>
+	</target>
+	
+	<target name="edgeRelease-build" depends="-compile-webclasses, -ensure-version, -ensure-fullversion">
+		<mkdir dir="build/website-edge" />
+		<java classname="lombok.website.WebsiteMaker" failonerror="true">
+			<classpath>
+				<path refid="build.path" />
+				<pathelement location="build/webclasses" />
+			</classpath>
+			<arg value="${lombok.version}" />
+			<arg value="${lombok.fullversion}" />
+			<arg value="download-edge" />
+			<arg value="website" />
+			<arg value="build/website-edge/download-edge.html" />
+		</java>
+		<copy file="dist/lombok.jar" tofile="build/website-edge/lombok-edge.jar" />
+		
+		<tar destfile="dist/website-edge.tar.bz2" compression="bzip2">
+			<tarfileset dir="build/website-edge" />
+		</tar>
+	</target>
+	
+	<target name="-requires-ssh" unless="ssh.username">
+		<fail>ssh.username and ssh.keyfile should be set.</fail>
+	</target>
+
+	<target name="edgeRelease" depends="-requires-ssh, edgeRelease-build">
+		<ivy:scpUpload
+			from="dist/website-edge.tar.bz2"
+			to="/data/lombok/staging"
+			server="projectlombok.org"
+			username="${ssh.username}"
+			keyfile="${ssh.keyfile}"
+			knownHosts="ssh.knownHosts" />
+		<ivy:sshExec
+			cmd="/data/lombok/stagingCmd/deployEdge"
+			server="projectlombok.org"
+			username="${ssh.username}"
+			keyfile="${ssh.keyfile}"
+			knownHosts="ssh.knownHosts" />
+	</target>
+	
+	<target name="javadoc" description="Generates the javadoc" depends="-ensure-version, -ensure-fullversion" unless="skip.javadoc">
+		<delete dir="build/api" quiet="true" />
+		<delete dir="doc/api" quiet="true" />
+		<mkdir dir="build/api" />
+		<property name="javadoc.overview.html" location="build/javadoc.overview.html" />
+		<echo file="${javadoc.overview.html}"><![CDATA[<html><body>
+			Welcome to the lombok javadoc.&nbsp;If you're just looking to learn more about using lombok
+			You probably want to look at <a href="https://projectlombok.org/features/index.html">the feature documentation</a>.&nbsp;Otherwise,
+			check the <a href="lombok/package-summary.html">lombok</a> package.&nbsp;If you're trying to extend lombok or
+			write your own plugins, the other packages are what you're looking for.</body></html>
+		]]></echo>
+		<javadoc sourcepath="src/core" defaultexcludes="yes" destdir="build/api" windowtitle="Lombok" Overview="${javadoc.overview.html}">
+			<package name="lombok" />
+			<package name="lombok.experimental" />
+			<package name="lombok.extern.*" />
+			<classpath refid="build.path" />
+			<classpath location="build/lombok" />
+			<header><![CDATA[<a href='https://projectlombok.org/' target='_blank'>Lombok</a> - ]]>v${lombok.version}</header>
+			<bottom><![CDATA[<i>Copyright &copy; 2009-2018 The Project Lombok Authors, licensed under the <a href='http://www.opensource.org/licenses/mit-license.php' target='_blank'>MIT licence</a>.]]></bottom>
+		</javadoc>
+		<!-- bugfix for boneheaded javadoc bug where ?is-external=true is inserted before an anchor ref, breaking the anchor ref.
+		is-external=true doesn't actually do anything, so, we'll just get rid of it. -->
+		<replaceregexp match="\?is-external=true#" replace="#" flags="gi">
+			<fileset dir="build/api" includes="**/*.html" />
+		</replaceregexp>
+		<mkdir dir="doc/api" />
+		<copy todir="doc/api">
+			<fileset dir="build/api" includes="**/*.html" />
+			<filterchain>
+				<linecontainsregexp negate="true">
+					<regexp pattern="(Generated by javadoc)|(.META NAME=.date.)" />
+				</linecontainsregexp>
+			</filterchain>
+		</copy>
+		<copy todir="doc/api">
+			<fileset dir="build/api" excludes="**/*.html" />
+		</copy>
+	</target>
+</project>
