@@ -27,6 +27,7 @@ import lombok.core.configuration.CallSuperType;
 import lombok.core.configuration.ConfigurationKey;
 import lombok.core.configuration.FlagUsageType;
 import lombok.core.configuration.NullCheckExceptionType;
+import lombok.core.configuration.TypeName;
 
 /**
  * A container class containing all lombok configuration keys that do not belong to a specific annotation.
@@ -82,7 +83,7 @@ public class ConfigurationKeys {
 	 * 
 	 * NB: If you enable this option, findbugs must be on the source or classpath, or you'll get errors that the type {@code SuppressFBWarnings} cannot be found.
 	 */
-	public static final ConfigurationKey<Boolean> ADD_FINDBUGS_SUPPRESSWARNINGS_ANNOTATIONS = new ConfigurationKey<Boolean>("lombok.extern.findbugs.addSuppressFBWarnings", "Generate @edu.umd.cs.findbugs.annotations.SuppressFBWArnings on all generated code (default: false).") {};
+	public static final ConfigurationKey<Boolean> ADD_FINDBUGS_SUPPRESSWARNINGS_ANNOTATIONS = new ConfigurationKey<Boolean>("lombok.extern.findbugs.addSuppressFBWarnings", "Generate @edu.umd.cs.findbugs.annotations.SuppressFBWarnings on all generated code (default: false).") {};
 	
 	// ----- *ArgsConstructor -----
 	
@@ -137,7 +138,7 @@ public class ConfigurationKeys {
 	 * 
 	 * If {@code true} (default), @Data and @Value will also generate a private no-args constructor, if there isn't already one, setting all fields to their default values. 
 	 */
-	public static final ConfigurationKey<Boolean> NO_ARGS_CONSTRUCTOR_EXTRA_PRIVATE = new ConfigurationKey<Boolean>("lombok.noArgsConstructor.extraPrivate", "Generate a private no-ars constructor for @Data and @Value (default: true).") {};
+	public static final ConfigurationKey<Boolean> NO_ARGS_CONSTRUCTOR_EXTRA_PRIVATE = new ConfigurationKey<Boolean>("lombok.noArgsConstructor.extraPrivate", "Generate a private no-args constructor for @Data and @Value (default: true).") {};
 	
 	/**
 	 * lombok configuration: {@code lombok.requiredArgsConstructor.flagUsage} = {@code WARNING} | {@code ERROR}.
@@ -213,7 +214,7 @@ public class ConfigurationKeys {
 	 * 
 	 * For any class with an {@code @EqualsAndHashCode} annotation which extends a class other than {@code java.lang.Object}, should a call to superclass's implementation of {@code equals} and {@code hashCode} be included in the generated methods? (Default = warn)
 	 */
-	public static final ConfigurationKey<CallSuperType> EQUALS_AND_HASH_CODE_CALL_SUPER = new ConfigurationKey<CallSuperType>("lombok.equalsAndHashCode.callSuper", "When generating equals and hashCode for classes that don't extend Object, either automatically take into account superclass implementation (call), or don't (skip), or warn and don't (warn). (default = warn).") {};
+	public static final ConfigurationKey<CallSuperType> EQUALS_AND_HASH_CODE_CALL_SUPER = new ConfigurationKey<CallSuperType>("lombok.equalsAndHashCode.callSuper", "When generating equals and hashCode for classes that extend something (other than Object), either automatically take into account superclass implementation (call), or don't (skip), or warn and don't (warn). (default = warn).") {};
 	
 	/**
 	 * lombok configuration: {@code lombok.equalsAndHashCode.flagUsage} = {@code WARNING} | {@code ERROR}.
@@ -230,6 +231,13 @@ public class ConfigurationKeys {
 	 * For any class without an {@code @ToString} that explicitly defines the {@code doNotUseGetters} option, this value is used  (default = false).
 	 */
 	public static final ConfigurationKey<Boolean> TO_STRING_DO_NOT_USE_GETTERS = new ConfigurationKey<Boolean>("lombok.toString.doNotUseGetters", "Don't call the getters but use the fields directly in the generated toString method (default = false).") {};
+	
+	/**
+	 * lombok configuration: {@code lombok.toString.callSuper} = {@code call} | {@code ignore} | {@code warn}.
+	 * 
+	 * For any class with an {@code @ToString} annotation which extends a class other than {@code java.lang.Object}, should a call to superclass's implementation of {@code toString} be included in the generated method? (Default = skip)
+	 */
+	public static final ConfigurationKey<CallSuperType> TO_STRING_CALL_SUPER = new ConfigurationKey<CallSuperType>("lombok.toString.callSuper", "When generating toString for classes that extend something (other than Object), either automatically take into account superclass implementation (call), or don't (skip), or warn and don't (warn). (default = warn).") {};
 	
 	/**
 	 * lombok configuration: {@code lombok.toString.flagUsage} = {@code WARNING} | {@code ERROR}.
@@ -529,18 +537,11 @@ public class ConfigurationKeys {
 	public static final ConfigurationKey<FlagUsageType> FIELD_NAME_CONSTANTS_FLAG_USAGE = new ConfigurationKey<FlagUsageType>("lombok.fieldNameConstants.flagUsage", "Emit a warning or error if @FieldNameConstants is used.") {};
 	
 	/**
-	 * lombok configuration: {@code lombok.fieldNameConstants.prefix} = &lt;String: aJavaIdentifierPrefix&gt; (Default: {@code PREFIX_}).
+	 * lombok configuration: {@code lombok.fieldNameConstants.innerTypeName} = &lt;String: AValidJavaTypeName&gt; (Default: {@code Fields}).
 	 * 
 	 * The names of the constants generated by {@code @FieldNameConstants} will be prefixed with this value.
 	 */
-	public static final ConfigurationKey<String> FIELD_NAME_CONSTANTS_PREFIX = new ConfigurationKey<String>("lombok.fieldNameConstants.prefix", "names of constants generated by @FieldNameConstants will be prefixed with this value. (default: 'PREFIX_').") {};
-	
-	/**
-	 * lombok configuration: {@code lombok.fieldNameConstants.suffix} = &lt;String: aJavaIdentifierPrefix&gt; (Default: nothing).
-	 * 
-	 * The names of the constants generated by {@code @FieldNameConstants} will be suffixed with this value.
-	 */
-	public static final ConfigurationKey<String> FIELD_NAME_CONSTANTS_SUFFIX = new ConfigurationKey<String>("lombok.fieldNameConstants.suffix", "names of constants generated by @FieldNameConstants will be suffixed with this value. (default: nothing).") {};
+	public static final ConfigurationKey<String> FIELD_NAME_CONSTANTS_INNER_TYPE_NAME = new ConfigurationKey<String>("lombok.fieldNameConstants.innerTypeName", "The default name of the inner type generated by @FieldNameConstants. (default: 'Fields').") {};
 	
 	// ----- Wither -----
 	
@@ -570,4 +571,12 @@ public class ConfigurationKeys {
 	 * If set to {@code true}, no further {@code lombok.config} files will be checked.
 	 */
 	public static final ConfigurationKey<Boolean> STOP_BUBBLING = new ConfigurationKey<Boolean>("config.stopBubbling", "Tell the configuration system it should stop looking for other configuration files (default: false).") {};
+
+	/**
+	 * lombok configuration: {@code lombok.copyableAnnotations} += &lt;TypeName: fully-qualified annotation class name&gt;.
+	 *
+	 * Copy these annotations to getters, setters, withers, builder-setters, etc.
+	 */
+	public static final ConfigurationKey<List<TypeName>> COPYABLE_ANNOTATIONS = new ConfigurationKey<List<TypeName>>("lombok.copyableAnnotations", "Copy these annotations to getters, setters, withers, builder-setters, etc.") {};
+
 }

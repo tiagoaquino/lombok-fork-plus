@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2014 The Project Lombok Authors.
+ * Copyright (C) 2013-2019 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,6 +33,7 @@ import lombok.core.AST.Kind;
 import lombok.core.AnnotationValues;
 import lombok.core.HandlerPriority;
 import lombok.eclipse.DeferUntilPostDiet;
+import lombok.eclipse.EclipseAST;
 import lombok.eclipse.EclipseAnnotationHandler;
 import lombok.eclipse.EclipseNode;
 
@@ -52,13 +53,33 @@ import org.eclipse.jdt.internal.compiler.ast.Statement;
 import org.eclipse.jdt.internal.compiler.ast.SynchronizedStatement;
 import org.eclipse.jdt.internal.compiler.ast.ThrowStatement;
 import org.eclipse.jdt.internal.compiler.ast.TryStatement;
+import org.eclipse.jdt.internal.compiler.ast.TypeReference;
 import org.mangosdk.spi.ProviderFor;
 
 @DeferUntilPostDiet
 @ProviderFor(EclipseAnnotationHandler.class)
 @HandlerPriority(value = 512) // 2^9; onParameter=@__(@NonNull) has to run first.
 public class HandleNonNull extends EclipseAnnotationHandler<NonNull> {
+	public static final HandleNonNull INSTANCE = new HandleNonNull();
+	
+	public void fix(EclipseNode method) {
+		for (EclipseNode m : method.down()) {
+			if (m.getKind() != Kind.ARGUMENT) continue;
+			for (EclipseNode c : m.down()) {
+				if (c.getKind() == Kind.ANNOTATION) {
+					if (annotationTypeMatches(NonNull.class, c)) {
+						handle0((Annotation) c.get(), c, true);
+					}
+				}
+			}
+		}
+	}
+	
 	@Override public void handle(AnnotationValues<NonNull> annotation, Annotation ast, EclipseNode annotationNode) {
+		handle0(ast, annotationNode, false);
+	}
+	
+	private void handle0(Annotation ast, EclipseNode annotationNode, boolean force) {
 		handleFlagUsage(annotationNode, ConfigurationKeys.NON_NULL_FLAG_USAGE, "@NonNull");
 		
 		if (annotationNode.up().getKind() == Kind.FIELD) {
@@ -76,19 +97,38 @@ public class HandleNonNull extends EclipseAnnotationHandler<NonNull> {
 			return;
 		}
 		
-		if (annotationNode.up().getKind() != Kind.ARGUMENT) return;
-		
-		Argument arg;
+		Argument param;
+		EclipseNode paramNode;
 		AbstractMethodDeclaration declaration;
 		
+		switch (annotationNode.up().getKind()) {
+		case ARGUMENT:
+			paramNode = annotationNode.up();
+			break;
+		case TYPE_USE:
+			EclipseNode typeNode = annotationNode.directUp();
+			boolean ok = false;
+			ASTNode astNode = typeNode.get();
+			if (astNode instanceof TypeReference) {
+				Annotation[] anns = EclipseAST.getTopLevelTypeReferenceAnnotations((TypeReference) astNode);
+				if (anns == null) return;
+				for (Annotation ann : anns) if (ast == ann) ok = true;
+			}
+			if (!ok) return;
+			paramNode = typeNode.directUp();
+			break;
+		default:
+			return;
+		}
+		
 		try {
-			arg = (Argument) annotationNode.up().get();
-			declaration = (AbstractMethodDeclaration) annotationNode.up().up().get();
+			param = (Argument) paramNode.get();
+			declaration = (AbstractMethodDeclaration) paramNode.up().get();
 		} catch (Exception e) {
 			return;
 		}
 		
-		if (isGenerated(declaration)) return;
+		if (!force && isGenerated(declaration)) return;
 		
 		if (declaration.isAbstract()) {
 			// This used to be a warning, but as @NonNull also has a documentary purpose, better to not warn about this. Since 1.16.7
@@ -99,7 +139,7 @@ public class HandleNonNull extends EclipseAnnotationHandler<NonNull> {
 		// and if they exist, create a new method in the class: 'private static <T> T lombok$nullCheck(T expr, String msg) {if (expr == null) throw NPE; return expr;}' and
 		// wrap all references to it in the super/this to a call to this method.
 		
-		Statement nullCheck = generateNullCheck(arg, annotationNode);
+		Statement nullCheck = generateNullCheck(param, annotationNode);
 		
 		if (nullCheck == null) {
 			// @NonNull applied to a primitive. Kinda pointless. Let's generate a warning.
@@ -110,7 +150,7 @@ public class HandleNonNull extends EclipseAnnotationHandler<NonNull> {
 		if (declaration.statements == null) {
 			declaration.statements = new Statement[] {nullCheck};
 		} else {
-			char[] expectedName = arg.name;
+			char[] expectedName = param.name;
 			/* Abort if the null check is already there, delving into try and synchronized statements */ {
 				Statement[] stats = declaration.statements;
 				int idx = 0;
@@ -143,7 +183,7 @@ public class HandleNonNull extends EclipseAnnotationHandler<NonNull> {
 			newStatements[skipOver] = nullCheck;
 			declaration.statements = newStatements;
 		}
-		annotationNode.up().up().rebuild();
+		paramNode.up().rebuild();
 	}
 	
 	public boolean isNullCheck(Statement stat) {

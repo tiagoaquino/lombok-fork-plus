@@ -59,6 +59,7 @@ import lombok.eclipse.handlers.EclipseSingularsRecipes.EclipseSingularizer;
 import lombok.eclipse.handlers.EclipseSingularsRecipes.SingularData;
 import lombok.eclipse.handlers.EclipseSingularsRecipes.StatementMaker;
 import lombok.eclipse.handlers.EclipseSingularsRecipes.TypeReferenceMaker;
+import lombok.eclipse.handlers.HandleNonNull;
 
 @ProviderFor(EclipseSingularizer.class)
 public class EclipseJavaUtilMapSingularizer extends EclipseJavaUtilSingularizer {
@@ -126,6 +127,7 @@ public class EclipseJavaUtilMapSingularizer extends EclipseJavaUtilSingularizer 
 			buildValueField.declarationSourceEnd = -1;
 			buildValueField.type = type;
 		}
+		
 		data.setGeneratedByRecursive(buildKeyField);
 		data.setGeneratedByRecursive(buildValueField);
 		EclipseNode keyFieldNode = injectFieldAndMarkGenerated(builderType, buildKeyField);
@@ -173,6 +175,7 @@ public class EclipseJavaUtilMapSingularizer extends EclipseJavaUtilSingularizer 
 		md.returnType = returnType;
 		md.annotations = deprecate ? new Annotation[] { generateDeprecatedAnnotation(data.getSource()) } : null;
 		
+		data.setGeneratedByRecursive(md);
 		injectMethod(builderType, md);
 	}
 	
@@ -212,18 +215,25 @@ public class EclipseJavaUtilMapSingularizer extends EclipseJavaUtilSingularizer 
 		}
 		if (returnStatement != null) statements.add(returnStatement);
 		
-		md.statements = statements.toArray(new Statement[statements.size()]);
+		md.statements = statements.toArray(new Statement[0]);
 		TypeReference keyParamType = cloneParamType(0, data.getTypeArgs(), builderType);
-		Argument keyParam = new Argument(keyParamName, 0, keyParamType, 0);
 		TypeReference valueParamType = cloneParamType(1, data.getTypeArgs(), builderType);
-		Argument valueParam = new Argument(valueParamName, 0, valueParamType, 0);
+		Annotation[] typeUseAnnsKey = getTypeUseAnnotations(keyParamType);
+		Annotation[] typeUseAnnsValue = getTypeUseAnnotations(valueParamType);
+		
+		removeTypeUseAnnotations(keyParamType);
+		removeTypeUseAnnotations(valueParamType);
+		Argument keyParam = new Argument(keyParamName, 0, keyParamType, ClassFileConstants.AccFinal);
+		Argument valueParam = new Argument(valueParamName, 0, valueParamType, ClassFileConstants.AccFinal);
+		keyParam.annotations = typeUseAnnsKey;
+		valueParam.annotations = typeUseAnnsValue;
 		md.arguments = new Argument[] {keyParam, valueParam};
 		md.returnType = returnType;
 		md.selector = fluent ? data.getSingularName() : HandlerUtil.buildAccessorName("put", new String(data.getSingularName())).toCharArray();
 		md.annotations = deprecate ? new Annotation[] { generateDeprecatedAnnotation(data.getSource()) } : null;
 		
 		data.setGeneratedByRecursive(md);
-		injectMethod(builderType, md);
+		HandleNonNull.INSTANCE.fix(injectMethod(builderType, md));
 	}
 	
 	private void generatePluralMethod(boolean deprecate, TypeReference returnType, Statement returnStatement, SingularData data, EclipseNode builderType, boolean fluent) {
@@ -276,11 +286,11 @@ public class EclipseJavaUtilMapSingularizer extends EclipseJavaUtilSingularizer 
 		statements.add(forEach);
 		if (returnStatement != null) statements.add(returnStatement);
 		
-		md.statements = statements.toArray(new Statement[statements.size()]);
+		md.statements = statements.toArray(new Statement[0]);
 		
 		TypeReference paramType = new QualifiedTypeReference(JAVA_UTIL_MAP, NULL_POSS);
 		paramType = addTypeArgs(2, true, builderType, paramType, data.getTypeArgs());
-		Argument param = new Argument(data.getPluralName(), 0, paramType, 0);
+		Argument param = new Argument(data.getPluralName(), 0, paramType, ClassFileConstants.AccFinal);
 		md.arguments = new Argument[] {param};
 		md.returnType = returnType;
 		md.selector = fluent ? data.getPluralName() : HandlerUtil.buildAccessorName("putAll", new String(data.getPluralName())).toCharArray();
