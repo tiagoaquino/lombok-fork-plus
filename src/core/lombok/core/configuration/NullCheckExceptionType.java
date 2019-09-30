@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2018 The Project Lombok Authors.
+ * Copyright (C) 2014-2019 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,28 +21,64 @@
  */
 package lombok.core.configuration;
 
+import lombok.core.LombokImmutableList;
 
-@ExampleValueString("[NullPointerException | IllegalArgumentException]")
+@ExampleValueString("[NullPointerException | IllegalArgumentException | Assertion | JDK | GUAVA]")
 public enum NullCheckExceptionType {
 	ILLEGAL_ARGUMENT_EXCEPTION {
-		public String toExceptionMessage(String fieldName) {
-			return fieldName + " is marked @NonNull but is null";
-		}
-		
 		@Override public String getExceptionType() {
 			return "java.lang.IllegalArgumentException";
 		}
+
+		@Override public LombokImmutableList<String> getMethod() {
+			return null;
+		}
 	},
 	NULL_POINTER_EXCEPTION {
-		@Override public String toExceptionMessage(String fieldName) {
-			return fieldName + " is marked @NonNull but is null";
-		}
-		
-		public String getExceptionType() {
+		@Override public String getExceptionType() {
 			return "java.lang.NullPointerException";
+		}
+
+		@Override public LombokImmutableList<String> getMethod() {
+			return null;
+		}
+	},
+	ASSERTION {
+		@Override public String getExceptionType() {
+			return null;
+		}
+
+		@Override public LombokImmutableList<String> getMethod() {
+			return null;
+		}
+	},
+	JDK {
+		@Override public String getExceptionType() {
+			return null;
+		}
+
+		@Override public LombokImmutableList<String> getMethod() {
+			return METHOD_JDK;
+		}
+	},
+	GUAVA {
+		@Override public String getExceptionType() {
+			return null;
+		}
+
+		@Override public LombokImmutableList<String> getMethod() {
+			return METHOD_GUAVA;
 		}
 	};
 	
-	public abstract String toExceptionMessage(String fieldName);
+	private static final LombokImmutableList<String> METHOD_JDK = LombokImmutableList.of("java", "util", "Objects", "requireNonNull");
+	private static final LombokImmutableList<String> METHOD_GUAVA = LombokImmutableList.of("com", "google", "common", "base", "Preconditions", "checkNotNull");
+	
+	public String toExceptionMessage(String fieldName) {
+		return fieldName + " is marked non-null but is null";
+	}
+	
 	public abstract String getExceptionType();
+	
+	public abstract LombokImmutableList<String> getMethod();
 }

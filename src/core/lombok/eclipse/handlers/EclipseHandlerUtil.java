@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2018 The Project Lombok Authors.
+ * Copyright (C) 2009-2019 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -38,26 +38,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import lombok.AccessLevel;
-import lombok.ConfigurationKeys;
-import lombok.Data;
-import lombok.Getter;
-import lombok.Lombok;
-import lombok.core.AST.Kind;
-import lombok.core.AnnotationValues;
-import lombok.core.AnnotationValues.AnnotationValue;
-import lombok.core.TypeResolver;
-import lombok.core.configuration.NullCheckExceptionType;
-import lombok.core.configuration.TypeName;
-import lombok.core.debug.ProblemReporter;
-import lombok.core.handlers.HandlerUtil;
-import lombok.eclipse.Eclipse;
-import lombok.eclipse.EclipseAST;
-import lombok.eclipse.EclipseNode;
-import lombok.experimental.Accessors;
-import lombok.experimental.Tolerate;
-import lombok.permit.Permit;
-
 import org.eclipse.jdt.internal.compiler.ast.ASTNode;
 import org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.AbstractVariableDeclaration;
@@ -66,6 +46,7 @@ import org.eclipse.jdt.internal.compiler.ast.Annotation;
 import org.eclipse.jdt.internal.compiler.ast.ArrayInitializer;
 import org.eclipse.jdt.internal.compiler.ast.ArrayQualifiedTypeReference;
 import org.eclipse.jdt.internal.compiler.ast.ArrayTypeReference;
+import org.eclipse.jdt.internal.compiler.ast.AssertStatement;
 import org.eclipse.jdt.internal.compiler.ast.Block;
 import org.eclipse.jdt.internal.compiler.ast.CastExpression;
 import org.eclipse.jdt.internal.compiler.ast.CharLiteral;
@@ -113,11 +94,35 @@ import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
 import org.eclipse.jdt.internal.compiler.lookup.Binding;
 import org.eclipse.jdt.internal.compiler.lookup.CaptureBinding;
 import org.eclipse.jdt.internal.compiler.lookup.ParameterizedTypeBinding;
+import org.eclipse.jdt.internal.compiler.lookup.RawTypeBinding;
 import org.eclipse.jdt.internal.compiler.lookup.ReferenceBinding;
 import org.eclipse.jdt.internal.compiler.lookup.TypeBinding;
 import org.eclipse.jdt.internal.compiler.lookup.TypeConstants;
 import org.eclipse.jdt.internal.compiler.lookup.TypeIds;
 import org.eclipse.jdt.internal.compiler.lookup.WildcardBinding;
+
+import lombok.AccessLevel;
+import lombok.ConfigurationKeys;
+import lombok.Data;
+import lombok.Getter;
+import lombok.Lombok;
+import lombok.core.AST.Kind;
+import lombok.core.AnnotationValues;
+import lombok.core.AnnotationValues.AnnotationValue;
+import lombok.core.LombokImmutableList;
+import lombok.core.TypeResolver;
+import lombok.core.configuration.CheckerFrameworkVersion;
+import lombok.core.configuration.NullCheckExceptionType;
+import lombok.core.configuration.TypeName;
+import lombok.core.debug.ProblemReporter;
+import lombok.core.handlers.HandlerUtil;
+import lombok.core.handlers.HandlerUtil.FieldAccess;
+import lombok.eclipse.Eclipse;
+import lombok.eclipse.EclipseAST;
+import lombok.eclipse.EclipseNode;
+import lombok.experimental.Accessors;
+import lombok.experimental.Tolerate;
+import lombok.permit.Permit;
 
 /**
  * Container for static utility methods useful to handlers written for eclipse.
@@ -180,6 +185,23 @@ public class EclipseHandlerUtil {
 		return ma;
 	}
 	
+	public static MarkerAnnotation generateNamedAnnotation(ASTNode source, String typeName) {
+		char[][] cc = fromQualifiedName(typeName);
+		QualifiedTypeReference qtr = new QualifiedTypeReference(cc, poss(source, cc.length));
+		setGeneratedBy(qtr, source);
+		MarkerAnnotation ma = new MarkerAnnotation(qtr, source.sourceStart);
+		// No matter what value you input for sourceEnd, the AST->DOM converter of eclipse will reparse to find the end, and will fail as
+		// it can't find code that isn't really there. This results in the end position being set to 2 or 0 or some weird magic value, and thus,
+		// length, as calculated by end-start, is all screwed up, resulting in IllegalArgumentException during a setSourceRange call MUCH later in the process.
+		// We solve it by going with a voodoo magic source start value such that the calculated length so happens to exactly be 0. 0 lengths are accepted
+		// by eclipse. For some reason.
+		// TL;DR: Don't change 1. 1 is sacred. Trust the 1.
+		// issue: #408.
+		ma.sourceStart = 1;
+		setGeneratedBy(ma, source);
+		return ma;
+	}
+	
 	public static boolean isFieldDeprecated(EclipseNode fieldNode) {
 		if (!(fieldNode.get() instanceof FieldDeclaration)) return false;
 		FieldDeclaration field = (FieldDeclaration) fieldNode.get();
@@ -193,6 +215,11 @@ public class EclipseHandlerUtil {
 			}
 		}
 		return false;
+	}
+	
+	public static CheckerFrameworkVersion getCheckerFrameworkVersion(EclipseNode node) {
+		CheckerFrameworkVersion cfv = node.getAst().readConfiguration(ConfigurationKeys.CHECKER_FRAMEWORK);
+		return cfv != null ? cfv : CheckerFrameworkVersion.NONE;
 	}
 	
 	/**
@@ -221,14 +248,14 @@ public class EclipseHandlerUtil {
 	 * @param typeRef A type reference to check.
 	 */
 	public static boolean typeMatches(String type, EclipseNode node, TypeReference typeRef) {
-		if (typeRef == null || typeRef.getTypeName() == null || typeRef.getTypeName().length == 0) return false;
-		String lastPartA = new String(typeRef.getTypeName()[typeRef.getTypeName().length -1]);
-		int lastIndex = type.lastIndexOf('.');
-		String lastPartB = lastIndex == -1 ? type : type.substring(lastIndex + 1);
-		if (!lastPartA.equals(lastPartB)) return false;
-		String typeName = toQualifiedName(typeRef.getTypeName());
-		
-		TypeResolver resolver = new TypeResolver(node.getImportList());
+		char[][] tn = typeRef == null ? null : typeRef.getTypeName();
+		if (tn == null || tn.length == 0) return false;
+		char[] lastPartA = tn[tn.length - 1];
+		int lastIndex = type.lastIndexOf('.') + 1;
+		if (lastPartA.length != type.length() - lastIndex) return false;
+		for (int i = 0; i < lastPartA.length; i++) if (lastPartA[i] != type.charAt(i + lastIndex)) return false;
+		String typeName = toQualifiedName(tn);
+		TypeResolver resolver = node.getImportListAsTypeResolver();
 		return resolver.typeMatches(node, type, typeName);
 	}
 	
@@ -306,10 +333,14 @@ public class EclipseHandlerUtil {
 		public static final Field STRING_LITERAL__LINE_NUMBER;
 		public static final Field ANNOTATION__MEMBER_VALUE_PAIR_NAME;
 		public static final Field TYPE_REFERENCE__ANNOTATIONS;
+		public static final Class<?> INTERSECTION_BINDING;
+		public static final Field INTERSECTION_BINDING_TYPES;
 		static {
 			STRING_LITERAL__LINE_NUMBER = getField(StringLiteral.class, "lineNumber");
 			ANNOTATION__MEMBER_VALUE_PAIR_NAME = getField(Annotation.class, "memberValuePairName");
 			TYPE_REFERENCE__ANNOTATIONS = getField(TypeReference.class, "annotations");
+			INTERSECTION_BINDING = getClass("org.eclipse.jdt.internal.compiler.lookup.IntersectionTypeBinding18");
+			INTERSECTION_BINDING_TYPES = INTERSECTION_BINDING == null ? null : getField(INTERSECTION_BINDING, "intersectingTypes");
 		}
 		
 		public static int reflectInt(Field f, Object o) {
@@ -333,6 +364,14 @@ public class EclipseHandlerUtil {
 				return f.get(o);
 			} catch (IllegalAccessException e) {
 				throw new RuntimeException(e);
+			}
+		}
+		
+		private static Class<?> getClass(String fqn) {
+			try {
+				return Class.forName(fqn);
+			} catch (Exception e) {
+				return null;
 			}
 		}
 		
@@ -712,6 +751,17 @@ public class EclipseHandlerUtil {
 		return false;
 	}
 	
+	public static boolean hasNonNullAnnotations(EclipseNode node, List<Annotation> anns) {
+		if (anns == null) return false;
+		for (Annotation annotation : anns) {
+			TypeReference typeRef = annotation.type;
+			if (typeRef != null && typeRef.getTypeName() != null) {
+				for (String bn : NONNULL_ANNOTATIONS) if (typeMatches(bn, node, typeRef)) return true;
+			}
+		}
+		return false;
+	}
+	
 	private static final Annotation[] EMPTY_ANNOTATIONS_ARRAY = new Annotation[0];
 	
 	/**
@@ -727,12 +777,32 @@ public class EclipseHandlerUtil {
 			TypeReference typeRef = annotation.type;
 			boolean match = false;
 			if (typeRef != null && typeRef.getTypeName() != null) {
-				for (TypeName cn : configuredCopyable) if (typeMatches(cn.toString(), node, typeRef)) {
+				for (TypeName cn : configuredCopyable) if (cn != null && typeMatches(cn.toString(), node, typeRef)) {
 					result.add(annotation);
 					match = true;
 					break;
 				}
 				if (!match) for (String bn : BASE_COPYABLE_ANNOTATIONS) if (typeMatches(bn, node, typeRef)) {
+					result.add(annotation);
+					break;
+				}
+			}
+		}
+		return result.toArray(EMPTY_ANNOTATIONS_ARRAY);
+	}
+	
+	/**
+	 * Searches the given field node for annotations that are specifically intentioned to be copied to the setter.
+	 */
+	public static Annotation[] findCopyableToSetterAnnotations(EclipseNode node) {
+		AbstractVariableDeclaration avd = (AbstractVariableDeclaration) node.get();
+		if (avd.annotations == null) return EMPTY_ANNOTATIONS_ARRAY;
+		List<Annotation> result = new ArrayList<Annotation>();
+		
+		for (Annotation annotation : avd.annotations) {
+			TypeReference typeRef = annotation.type;
+			if (typeRef != null && typeRef.getTypeName() != null) {
+				for (String bn : COPY_TO_SETTER_ANNOTATIONS) if (typeMatches(bn, node, typeRef)) {
 					result.add(annotation);
 					break;
 				}
@@ -791,6 +861,10 @@ public class EclipseHandlerUtil {
 	}
 	
 	public static TypeReference makeType(TypeBinding binding, ASTNode pos, boolean allowCompound) {
+		if (binding.getClass() == EclipseReflectiveMembers.INTERSECTION_BINDING) {
+			Object[] arr = (Object[]) EclipseReflectiveMembers.reflect(EclipseReflectiveMembers.INTERSECTION_BINDING_TYPES, binding);
+			binding = (TypeBinding) arr[0];
+		}
 		int dims = binding.dimensions();
 		binding = binding.leafComponentType();
 		
@@ -875,7 +949,12 @@ public class EclipseHandlerUtil {
 			WildcardBinding wildcard = (WildcardBinding) binding;
 			if (wildcard.boundKind == Wildcard.EXTENDS) {
 				if (!allowCompound) {
-					return makeType(wildcard.bound, pos, false);
+					TypeBinding bound = wildcard.bound;
+					boolean isObject = bound.id == TypeIds.T_JavaLangObject;
+					TypeBinding[] otherBounds = wildcard.otherBounds;
+					if (isObject && otherBounds != null && otherBounds.length > 0) {
+						return makeType(otherBounds[0], pos, false);
+					} else return makeType(bound, pos, false);
 				} else {
 					Wildcard out = new Wildcard(Wildcard.EXTENDS);
 					setGeneratedBy(out, pos);
@@ -902,7 +981,8 @@ public class EclipseHandlerUtil {
 		// Finally, add however many nullTypeArgument[] arrays as that are missing, inverse the list, toArray it, and use that as PTR's typeArgument argument.
 		
 		List<TypeReference[]> params = new ArrayList<TypeReference[]>();
-		/* Calculate generics */ {
+		/* Calculate generics */
+		if (!(binding instanceof RawTypeBinding)) {
 			TypeBinding b = binding;
 			while (true) {
 				boolean isFinalStop = b.isLocalType() || !b.isMemberType() || b.enclosingType() == null;
@@ -1337,20 +1417,20 @@ public class EclipseHandlerUtil {
 	}
 	
 	/**
-	 * Translates the given field into all possible wither names.
-	 * Convenient wrapper around {@link TransformationsUtil#toAllWitherNames(lombok.core.AnnotationValues, CharSequence, boolean)}.
+	 * Translates the given field into all possible with names.
+	 * Convenient wrapper around {@link TransformationsUtil#toAllWithNames(lombok.core.AnnotationValues, CharSequence, boolean)}.
 	 */
-	public static java.util.List<String> toAllWitherNames(EclipseNode field, boolean isBoolean) {
-		return HandlerUtil.toAllWitherNames(field.getAst(), getAccessorsForField(field), field.getName(), isBoolean);
+	public static java.util.List<String> toAllWithNames(EclipseNode field, boolean isBoolean) {
+		return HandlerUtil.toAllWithNames(field.getAst(), getAccessorsForField(field), field.getName(), isBoolean);
 	}
 	
 	/**
-	 * @return the likely wither name for the stated field. (e.g. private boolean foo; to withFoo).
+	 * @return the likely with name for the stated field. (e.g. private boolean foo; to withFoo).
 	 * 
-	 * Convenient wrapper around {@link TransformationsUtil#toWitherName(lombok.core.AnnotationValues, CharSequence, boolean)}.
+	 * Convenient wrapper around {@link TransformationsUtil#toWithName(lombok.core.AnnotationValues, CharSequence, boolean)}.
 	 */
-	public static String toWitherName(EclipseNode field, boolean isBoolean) {
-		return HandlerUtil.toWitherName(field.getAst(), getAccessorsForField(field), field.getName(), isBoolean);
+	public static String toWithName(EclipseNode field, boolean isBoolean) {
+		return HandlerUtil.toWithName(field.getAst(), getAccessorsForField(field), field.getName(), isBoolean);
 	}
 	
 	/**
@@ -1752,44 +1832,73 @@ public class EclipseHandlerUtil {
 	}
 	
 	/**
-	 * Generates a new statement that checks if the given variable is null, and if so, throws a specified exception with the
+	 * Generates a new statement that checks if the given local variable is null, and if so, throws a specified exception with the
 	 * variable name as message.
-	 * 
-	 * @param exName The name of the exception to throw; normally {@code java.lang.NullPointerException}.
 	 */
-	public static Statement generateNullCheck(AbstractVariableDeclaration variable, EclipseNode sourceNode) {
+	public static Statement generateNullCheck(TypeReference type, char[] variable, EclipseNode sourceNode) {
 		NullCheckExceptionType exceptionType = sourceNode.getAst().readConfiguration(ConfigurationKeys.NON_NULL_EXCEPTION_TYPE);
 		if (exceptionType == null) exceptionType = NullCheckExceptionType.NULL_POINTER_EXCEPTION;
 		
 		ASTNode source = sourceNode.get();
 		
 		int pS = source.sourceStart, pE = source.sourceEnd;
-		long p = (long)pS << 32 | pE;
+		long p = (long) pS << 32 | pE;
 		
-		if (isPrimitive(variable.type)) return null;
+		if (isPrimitive(type)) return null;
+		SingleNameReference varName = new SingleNameReference(variable, p);
+		setGeneratedBy(varName, source);
+		
+		StringLiteral message = new StringLiteral(exceptionType.toExceptionMessage(new String(variable)).toCharArray(), pS, pE, 0);
+		setGeneratedBy(message, source);
+		
+		LombokImmutableList<String> method = exceptionType.getMethod();
+		if (method != null) {
+			
+			MessageSend invocation = new MessageSend();
+			invocation.sourceStart = pS; invocation.sourceEnd = pE;
+			setGeneratedBy(invocation, source);
+			
+			char[][] utilityTypeName = new char[method.size() - 1][];
+			for (int i = 0; i < method.size() - 1; i++) {
+				utilityTypeName[i] = method.get(i).toCharArray();
+			}
+			
+			invocation.receiver = new QualifiedNameReference(utilityTypeName, new long[method.size()], pS, pE);
+			setGeneratedBy(invocation.receiver, source);
+			invocation.selector = method.get(method.size() - 1).toCharArray();
+			invocation.arguments = new Expression[] {varName, message};
+			return invocation;
+		}
+		
 		AllocationExpression exception = new AllocationExpression();
 		setGeneratedBy(exception, source);
-		int partCount = 1;
+		
+		NullLiteral nullLiteral = new NullLiteral(pS, pE);
+		setGeneratedBy(nullLiteral, source);
+		
+		int equalOperator = exceptionType == NullCheckExceptionType.ASSERTION ? OperatorIds.NOT_EQUAL : OperatorIds.EQUAL_EQUAL; 
+		EqualExpression equalExpression = new EqualExpression(varName, nullLiteral, equalOperator);
+		equalExpression.sourceStart = pS; equalExpression.statementEnd = equalExpression.sourceEnd = pE;
+		setGeneratedBy(equalExpression, source);
+		
+		if (exceptionType == NullCheckExceptionType.ASSERTION) {
+			Statement assertStatement = new AssertStatement(message, equalExpression, pS);
+			setGeneratedBy(assertStatement, source);
+			return assertStatement;
+		}
+		
 		String exceptionTypeStr = exceptionType.getExceptionType();
+		int partCount = 1;
 		for (int i = 0; i < exceptionTypeStr.length(); i++) if (exceptionTypeStr.charAt(i) == '.') partCount++;
 		long[] ps = new long[partCount];
 		Arrays.fill(ps, 0L);
 		exception.type = new QualifiedTypeReference(fromQualifiedName(exceptionTypeStr), ps);
 		setGeneratedBy(exception.type, source);
-		exception.arguments = new Expression[] {
-				new StringLiteral(exceptionType.toExceptionMessage(new String(variable.name)).toCharArray(), pS, pE, 0)
-		};
-		setGeneratedBy(exception.arguments[0], source);
+		exception.arguments = new Expression[] {message};
+		
 		ThrowStatement throwStatement = new ThrowStatement(exception, pS, pE);
 		setGeneratedBy(throwStatement, source);
 		
-		SingleNameReference varName = new SingleNameReference(variable.name, p);
-		setGeneratedBy(varName, source);
-		NullLiteral nullLiteral = new NullLiteral(pS, pE);
-		setGeneratedBy(nullLiteral, source);
-		EqualExpression equalExpression = new EqualExpression(varName, nullLiteral, OperatorIds.EQUAL_EQUAL);
-		equalExpression.sourceStart = pS; equalExpression.statementEnd = equalExpression.sourceEnd = pE;
-		setGeneratedBy(equalExpression, source);
 		Block throwBlock = new Block(0);
 		throwBlock.statements = new Statement[] {throwStatement};
 		throwBlock.sourceStart = pS; throwBlock.sourceEnd = pE;
@@ -1800,14 +1909,26 @@ public class EclipseHandlerUtil {
 	}
 	
 	/**
+	 * Generates a new statement that checks if the given variable is null, and if so, throws a specified exception with the
+	 * variable name as message.
+	 * 
+	 * @param exName The name of the exception to throw; normally {@code java.lang.NullPointerException}.
+	 */
+	public static Statement generateNullCheck(AbstractVariableDeclaration variable, EclipseNode sourceNode) {
+		return generateNullCheck(variable.type, variable.name, sourceNode);
+	}
+	
+	/**
 	 * Create an annotation of the given name, and is marked as being generated by the given source.
 	 */
 	public static MarkerAnnotation makeMarkerAnnotation(char[][] name, ASTNode source) {
-		long pos = (long)source.sourceStart << 32 | source.sourceEnd;
-		TypeReference typeRef = new QualifiedTypeReference(name, new long[] {pos, pos, pos});
+		long pos = (long) source.sourceStart << 32 | source.sourceEnd;
+		long[] poss = new long[name.length];
+		Arrays.fill(poss, pos);
+		TypeReference typeRef = new QualifiedTypeReference(name, poss);
 		setGeneratedBy(typeRef, source);
-		MarkerAnnotation ann = new MarkerAnnotation(typeRef, (int)(pos >> 32));
-		ann.declarationSourceEnd = ann.sourceEnd = ann.statementEnd = (int)pos;
+		MarkerAnnotation ann = new MarkerAnnotation(typeRef, (int) (pos >> 32));
+		ann.declarationSourceEnd = ann.sourceEnd = ann.statementEnd = (int) pos;
 		setGeneratedBy(ann, source);
 		return ann;
 	}

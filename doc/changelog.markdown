@@ -1,6 +1,40 @@
 Lombok Changelog
 ----------------
 
+### v1.18.10 (September 10th, 2019)
+* PROMOTION: `@Wither` has been promoted to the main package, renamed to `@With`. Otherwise, no changes have been made to the annotation. The old experimental annotation will remain for a few versions as a deprecated annotation. If you had `lombok.config` configuration for this annotation, the configuration keys for this feature have been renamed.
+* FEATURE: You can now configure a custom logger framework using the new `@CustomLog` annotation in combination with the `lombok.log.custom.declaration` configuration key. See the [log documentation](https://projectlombok.org/features/Log) for more information. [Pullrequest #2086](https://github.com/rzwitserloot/lombok/pull/2086) with thanks to Adam Juraszek.
+* ENHANCEMENT: Thanks to Mark Haynes, the `staticConstructor` will now also be generated if a (private) constructor already exists. [Issue #2100](https://github.com/rzwitserloot/lombok/issues/2100)
+* ENHANCEMENT: `val` is now capable of decoding the type of convoluted expressions (particularly if the right hand side involves lambdas and conditional (ternary) expressions). [Pull Request #2109](https://github.com/rzwitserloot/lombok/pull/2109) with thanks to Alexander Bulgakov.
+* ENHANCEMENT: You can now configure the generated builder class name via the config system, using key `lombok.builder.className`. See the [Builder documentation](https://projectlombok.org/features/Builder) and [SuperBuilder documentation](https://projectlombok.org/features/experimental/SuperBuilder)
+* ENHANCEMENT: If you mix up eclipse's non-null support, such as `@NonNullByDefault`, with lombok's `@NonNull`, you get a bunch of warnings about dead code that are inappropriate. These warnings are now suppressed, thanks to a contribution from Till Brychcy! [Pull Request #2155](https://github.com/rzwitserloot/lombok/pull/2155)
+* ENHANCEMENT: `@NonNull` can now also generate checks using jdk's `Objects.requireNonNull` or Guava's `Preconditions.checkNotNull`. [Issue #1197](https://github.com/rzwitserloot/lombok/issues/1197)
+* EXPERIMENT: Lombok is working together with [checkerframework](https://checkerframework.org/) to enable detection of improper builder use (such as forgetting to set a mandatory property prior to calling `build()`). This experiment can be turned on by adding `checkerframework = true` to your `lombok.config` file.
+* BUGFIX: Using `@JsonProperty` or `@JsonValue` on a field in combination with `@Setter` or `@Data` would sometimes throw a ClassCastException during compilation. [Issue #2156](https://github.com/rzwitserloot/lombok/issues/2156)
+* BUGFIX: Delombok would turn something like `List<byte[]>...` in a method parameter to `List<byte...>...` [Issue #2140](https://github.com/rzwitserloot/lombok/issues/2140)
+* BUGFIX: Javac would generate the wrong equals and hashCode if a type-use annotation was put on an array type field [Issue #2165](https://github.com/rzwitserloot/lombok/issues/2165)
+* BUGFIX: Eclipse 2019-06 + JDK-12 compatibility + an `@Singular` builder entry would produce a cascade of error dialogs. [Issue #2169](https://github.com/rzwitserloot/lombok/issues/2169)
+* BUGFIX: Javac would throw a NullPointerException if the package-info.java did not contain a package declaration. [Issue #2184](https://github.com/rzwitserloot/lombok/issues/2184)
+* BUGFIX: Javac sets incorrect annotated type on constructor, getter and setter. [Issue #2189](https://github.com/rzwitserloot/lombok/issues/2189)
+* IMPROBABLE BREAKING CHANGE: Stricter validation of configuration keys dealing with identifiers and types (`lombok.log.fieldName`, `lombok.fieldNameConstants.innerTypeName`, `lombok.copyableAnnotations`).
+* IMPROBABLE BREAKING CHANGE: The fields generated inside builders for fields with defaults (with `@Builder` on a class with fields marked `@Default`) now have `$value` as the name; direct manipulation of these fields is not advised because there is an associated `$set` variable that also needs to be taken into account. [Issue #2115](https://github.com/rzwitserloot/lombok/issues/2115)
+
+### v1.18.8 (May 7th, 2019)
+* FEATURE: You can now configure `@FieldNameConstants` to `CONSTANT_CASE` the generated constants, using a `lombok.config` option. See the [FieldNameConstants documentation](https://projectlombok.org/features/experimental/FieldNameConstants). [Issue #2092](https://github.com/rzwitserloot/lombok/issues/2092).
+* FEATURE: You can now suppress generation of the `builder` method when using `@Builder`; usually because you're only interested in the `toBuilder` method. As a convenience we won't emit warnings about missing `@Builder.Default` annotations when you do this. [Issue #2046](https://github.com/rzwitserloot/lombok/issues/2046)
+* FEATURE: You can now change the access modifier of generated builder classes. [Issue #2083](https://github.com/rzwitserloot/lombok/issues/2083).
+* FEATURE: When using `@NonNull`, or any other annotation that would result in a null-check, you can configure to generate an assert statement instead. [Issue #2078](https://github.com/rzwitserloot/lombok/issues/2078).
+* FEATURE: Lombok now knows exactly how to treat `@com.fasterxml.jackson.annotation.JsonProperty` and will copy it to the right places for example when making builders. [Issue #1961](https://github.com/rzwitserloot/lombok/issues/1961) [Issue #1981](https://github.com/rzwitserloot/lombok/issues/1981)
+* PLATFORM: A few lombok features (most notably delombok) failed on JDK12. [Issue #2082](https://github.com/rzwitserloot/lombok/issues/2082)
+* BUGFIX: var/val on methods that return an intersection type would now work in Eclipse. [Issue #1986](https://github.com/rzwitserloot/lombok/issues/1986)
+* BUGFIX: Fix for java6 regression if a field has javadoc. [Issue #2066](https://github.com/rzwitserloot/lombok/issues/2066)
+* BUGFIX: Delombok now delomboks java10's own `var` as `var` and not as the actual underlying type. [Issue #2049](https://github.com/rzwitserloot/lombok/issues/2049)
+* BUGFIX: If you use `@Builder` and manually write the `build()` method in your builder class, javac would error out instead of deferring to your implementation. [Issue #2050](https://github.com/rzwitserloot/lombok/issues/2050) [Issue #2061](https://github.com/rzwitserloot/lombok/issues/2061)
+* BUGFIX: `@SuperBuilder` together with `@Singular` on non-lists would produce an erroneous `emptyList` call. [Issue #2104](https://github.com/rzwitserloot/lombok/issues/2104).
+* IMPROBABLE BREAKING CHANGE: For fields and parameters marked non-null, if the method body starts with an assert statement to ensure the value isn't null, no code to throw an exception will be generated.
+* IMPROBABLE BREAKING CHANGE: When using `ecj` to compile java code with `@Builder` or `@SuperBuilder` in it, and a builder setter method was generated for a `@NonNull`-marked method, no explicit null check would be present. However, running `javac` on the exact same file _would_ produce the null check. Now ecj also produces this null check. [Issue #2120](https://github.com/rzwitserloot/lombok/issues/2120).
+* IMPROBABLE BREAKING CHANGE: We slightly changed the message of the exception lombok generates to handle `@NonNull` marked parameters. [Issue #2122](https://github.com/rzwitserloot/lombok/issues/2122)
+
 ### v1.18.6 (February 12th, 2019)
 * FEATURE: Javadoc on fields will now also be copied to the Builders' setters. Thanks for the contribution, Emil Lundberg. [Issue #2008](https://github.com/rzwitserloot/lombok/issues/2008)
 * FEATURE: The `@FieldNameConstants` feature now allows you to write the inner type by hand and add whatever you like to it; lombok will add the constants to this class. See the updated [FieldNameConstants feature](https://projectlombok.org/features/experimental/FieldNameConstants) page.
@@ -29,7 +63,6 @@ Lombok Changelog
 * BUGFIX: Fix NetBeans compile on save. [Issue #1770](https://github.com/rzwitserloot/lombok/issues/1770)
 * BUGFIX: If you manually write your builder class so you can add a few methods of your own, and those methods refer to generated methods, you'd usually run into various bizarre error messages, but only on JDK9/10/11. This one is hard to describe, but we fixed it. [Issue #1907](https://github.com/rzwitserloot/lombok/issues/1907)
 
-
 ### v1.18.2 (July 26th, 2018)
 * BUGFIX: mapstruct + lombok in eclipse should hopefully work again. [Issue #1359](https://github.com/rzwitserloot/lombok/issues/1359) and [mapstruct issue #1159](https://github.com/mapstruct/mapstruct/issues/1159)
 * BUGFIX: Equals and hashCode again exclude transient fields by default. [Issue #1724](https://github.com/rzwitserloot/lombok/issues/1724)
@@ -37,6 +70,7 @@ Lombok Changelog
 * BUGFIX: Lombok and gradle v4.9 didn't work together; that's been fixed. [Issue #1716](https://github.com/rzwitserloot/lombok/issues/1716) and [gradle-apt-plugin issue #87](https://github.com/tbroyer/gradle-apt-plugin/issues/87)
 * FEATURE: You can now make builders for type hierarchies, using the new (experimental) `@SuperBuilder` annotation. Thanks for the contribution, Jan Rieke. [`@SuperBuilder` documentation](https://projectlombok.org/features/experimental/SuperBuilder)
 * FEATURE: `@NoArgsConstructor`, including forcing one with `lombok.config: lombok.noArgsConstructor.extraPrivate=true` now take any defaults set with `@Builder.Default` into account. [Issue #1347](https://github.com/rzwitserloot/lombok/issues/1347)
+
 ### v1.18.0 (June 5th, 2018)
 * BREAKING CHANGE: The in 1.16.22 introduced configuration key `lombok.noArgsConstructor.extraPrivate` is now `false` by default. [Issue #1708](https://github.com/rzwitserloot/lombok/issues/1708)
 * BUGFIX: Do not generate a private no-args constructor if that breaks the code. [Issue #1703](https://github.com/rzwitserloot/lombok/issues/1703), [Issue #1704](https://github.com/rzwitserloot/lombok/issues/1704), [Issue #1712](https://github.com/rzwitserloot/lombok/issues/1712)

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2018 The Project Lombok Authors.
+ * Copyright (C) 2015-2019 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +28,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import lombok.AccessLevel;
+import lombok.core.configuration.CheckerFrameworkVersion;
 import lombok.core.handlers.HandlerUtil;
 import lombok.eclipse.EclipseNode;
 import lombok.eclipse.handlers.HandleNonNull;
@@ -90,21 +92,21 @@ abstract class EclipseJavaUtilListSetSingularizer extends EclipseJavaUtilSingula
 		return Collections.singletonList(injectFieldAndMarkGenerated(builderType, buildField));
 	}
 	
-	@Override public void generateMethods(SingularData data, boolean deprecate, EclipseNode builderType, boolean fluent, TypeReferenceMaker returnTypeMaker, StatementMaker returnStatementMaker) {
+	@Override public void generateMethods(CheckerFrameworkVersion cfv, SingularData data, boolean deprecate, EclipseNode builderType, boolean fluent, TypeReferenceMaker returnTypeMaker, StatementMaker returnStatementMaker, AccessLevel access) {
 		if (useGuavaInstead(builderType)) {
-			guavaListSetSingularizer.generateMethods(data, deprecate, builderType, fluent, returnTypeMaker, returnStatementMaker);
+			guavaListSetSingularizer.generateMethods(cfv, data, deprecate, builderType, fluent, returnTypeMaker, returnStatementMaker, access);
 			return;
 		}
 		
-		generateSingularMethod(deprecate, returnTypeMaker.make(), returnStatementMaker.make(), data, builderType, fluent);
-		generatePluralMethod(deprecate, returnTypeMaker.make(), returnStatementMaker.make(), data, builderType, fluent);
-		generateClearMethod(deprecate, returnTypeMaker.make(), returnStatementMaker.make(), data, builderType);
+		generateSingularMethod(cfv, deprecate, returnTypeMaker.make(), returnStatementMaker.make(), data, builderType, fluent, access);
+		generatePluralMethod(cfv, deprecate, returnTypeMaker.make(), returnStatementMaker.make(), data, builderType, fluent, access);
+		generateClearMethod(cfv, deprecate, returnTypeMaker.make(), returnStatementMaker.make(), data, builderType, access);
 	}
 	
-	private void generateClearMethod(boolean deprecate, TypeReference returnType, Statement returnStatement, SingularData data, EclipseNode builderType) {
+	private void generateClearMethod(CheckerFrameworkVersion cfv, boolean deprecate, TypeReference returnType, Statement returnStatement, SingularData data, EclipseNode builderType, AccessLevel access) {
 		MethodDeclaration md = new MethodDeclaration(((CompilationUnitDeclaration) builderType.top().get()).compilationResult);
 		md.bits |= ECLIPSE_DO_NOT_TOUCH_FLAG;
-		md.modifiers = ClassFileConstants.AccPublic;
+		md.modifiers = toEclipseModifier(access);
 		
 		FieldReference thisDotField = new FieldReference(data.getPluralName(), 0L);
 		thisDotField.receiver = new ThisReference(0, 0);
@@ -117,16 +119,16 @@ abstract class EclipseJavaUtilListSetSingularizer extends EclipseJavaUtilSingula
 		Statement clearStatement = new IfStatement(new EqualExpression(thisDotField, new NullLiteral(0, 0), OperatorIds.NOT_EQUAL), clearMsg, 0, 0);
 		md.statements = returnStatement != null ? new Statement[] {clearStatement, returnStatement} : new Statement[] {clearStatement};
 		md.returnType = returnType;
-		md.annotations = deprecate ? new Annotation[] { generateDeprecatedAnnotation(data.getSource()) } : null;
+		md.annotations = generateSelfReturnAnnotations(deprecate, cfv, data.getSource());
 		
 		data.setGeneratedByRecursive(md);
 		injectMethod(builderType, md);
 	}
 	
-	void generateSingularMethod(boolean deprecate, TypeReference returnType, Statement returnStatement, SingularData data, EclipseNode builderType, boolean fluent) {
+	void generateSingularMethod(CheckerFrameworkVersion cfv, boolean deprecate, TypeReference returnType, Statement returnStatement, SingularData data, EclipseNode builderType, boolean fluent, AccessLevel access) {
 		MethodDeclaration md = new MethodDeclaration(((CompilationUnitDeclaration) builderType.top().get()).compilationResult);
 		md.bits |= ECLIPSE_DO_NOT_TOUCH_FLAG;
-		md.modifiers = ClassFileConstants.AccPublic;
+		md.modifiers = toEclipseModifier(access);
 		
 		List<Statement> statements = new ArrayList<Statement>();
 		statements.add(createConstructBuilderVarIfNeeded(data, builderType, false));
@@ -149,16 +151,16 @@ abstract class EclipseJavaUtilListSetSingularizer extends EclipseJavaUtilSingula
 		md.arguments = new Argument[] {param};
 		md.returnType = returnType;
 		md.selector = fluent ? data.getSingularName() : HandlerUtil.buildAccessorName("add", new String(data.getSingularName())).toCharArray();
-		md.annotations = deprecate ? new Annotation[] { generateDeprecatedAnnotation(data.getSource()) } : null;
+		md.annotations = generateSelfReturnAnnotations(deprecate, cfv, data.getSource());
 		
 		data.setGeneratedByRecursive(md);
 		HandleNonNull.INSTANCE.fix(injectMethod(builderType, md));
 	}
 	
-	void generatePluralMethod(boolean deprecate, TypeReference returnType, Statement returnStatement, SingularData data, EclipseNode builderType, boolean fluent) {
+	void generatePluralMethod(CheckerFrameworkVersion cfv, boolean deprecate, TypeReference returnType, Statement returnStatement, SingularData data, EclipseNode builderType, boolean fluent, AccessLevel access) {
 		MethodDeclaration md = new MethodDeclaration(((CompilationUnitDeclaration) builderType.top().get()).compilationResult);
 		md.bits |= ECLIPSE_DO_NOT_TOUCH_FLAG;
-		md.modifiers = ClassFileConstants.AccPublic;
+		md.modifiers = toEclipseModifier(access);
 		
 		List<Statement> statements = new ArrayList<Statement>();
 		statements.add(createConstructBuilderVarIfNeeded(data, builderType, false));
@@ -180,7 +182,7 @@ abstract class EclipseJavaUtilListSetSingularizer extends EclipseJavaUtilSingula
 		md.arguments = new Argument[] {param};
 		md.returnType = returnType;
 		md.selector = fluent ? data.getPluralName() : HandlerUtil.buildAccessorName("addAll", new String(data.getPluralName())).toCharArray();
-		md.annotations = deprecate ? new Annotation[] { generateDeprecatedAnnotation(data.getSource()) } : null;
+		md.annotations = generateSelfReturnAnnotations(deprecate, cfv, data.getSource());
 		
 		data.setGeneratedByRecursive(md);
 		injectMethod(builderType, md);

@@ -120,7 +120,7 @@ public @interface Builder {
 	@Retention(SOURCE)
 	public @interface Default {}
 
-	/** @return Name of the method that creates a new builder instance. Default: {@code builder}. */
+	/** @return Name of the method that creates a new builder instance. Default: {@code builder}. If the empty string, suppress generating the {@code builder} method. */
 	String builderMethodName() default "builder";
 	
 	/** @return Name of the method in the builder class that creates an instance of your {@code @Builder}-annotated class. */
@@ -129,9 +129,9 @@ public @interface Builder {
 	/**
 	 * Name of the builder class.
 	 * 
-	 * Default for {@code @Builder} on types and constructors: {@code (TypeName)Builder}.
+	 * Default for {@code @Builder} on types and constructors: see the configkey {@code lombok.builder.className}, which if not set defaults to {@code (TypeName)Builder}.
 	 * <p>
-	 * Default for {@code @Builder} on methods: {@code (ReturnTypeName)Builder}.
+	 * Default for {@code @Builder} on methods: see the configkey {@code lombok.builder.className}, which if not set defaults to {@code (ReturnTypeName)Builder}.
 	 * 
 	 * @return Name of the builder class that will be generated (or if it already exists, will be filled with builder elements).
 	 */
@@ -145,6 +145,14 @@ public @interface Builder {
 	 * @return Whether to generate a {@code toBuilder()} method.
 	 */
 	boolean toBuilder() default false;
+	
+	/**
+	 * Sets the access level of the generated builder class. By default, generated builder classes are {@code public}.
+	 * Note: This does nothing if you write your own builder class (we won't change its access level).
+	 * 
+	 * @return The builder class will be generated with this access modifier.
+	 */
+	AccessLevel access() default lombok.AccessLevel.PUBLIC;
 	
 	/**
 	 * Put on a field (in case of {@code @Builder} on a type) or a parameter (for {@code @Builder} on a constructor or static method) to

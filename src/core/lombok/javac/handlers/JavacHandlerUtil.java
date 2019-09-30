@@ -40,36 +40,15 @@ import java.util.regex.Pattern;
 
 import javax.lang.model.element.Element;
 
-import lombok.AccessLevel;
-import lombok.ConfigurationKeys;
-import lombok.Data;
-import lombok.Getter;
-import lombok.core.AST.Kind;
-import lombok.core.AnnotationValues;
-import lombok.core.LombokImmutableList;
-import lombok.core.AnnotationValues.AnnotationValue;
-import lombok.core.CleanupTask;
-import lombok.core.TypeResolver;
-import lombok.core.configuration.NullCheckExceptionType;
-import lombok.core.configuration.TypeName;
-import lombok.core.handlers.HandlerUtil;
-import lombok.delombok.LombokOptionsFactory;
-import lombok.experimental.Accessors;
-import lombok.experimental.Tolerate;
-import lombok.javac.Javac;
-import lombok.javac.JavacNode;
-import lombok.javac.JavacTreeMaker;
-import lombok.permit.Permit;
-
 import com.sun.tools.javac.code.BoundKind;
 import com.sun.tools.javac.code.Flags;
 import com.sun.tools.javac.code.Scope;
 import com.sun.tools.javac.code.Symbol;
-import com.sun.tools.javac.code.Symtab;
-import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Symbol.VarSymbol;
+import com.sun.tools.javac.code.Symtab;
+import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.Type.MethodType;
 import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.JCTree.JCAnnotation;
@@ -83,6 +62,7 @@ import com.sun.tools.javac.tree.JCTree.JCExpressionStatement;
 import com.sun.tools.javac.tree.JCTree.JCFieldAccess;
 import com.sun.tools.javac.tree.JCTree.JCIdent;
 import com.sun.tools.javac.tree.JCTree.JCImport;
+import com.sun.tools.javac.tree.JCTree.JCLiteral;
 import com.sun.tools.javac.tree.JCTree.JCMethodDecl;
 import com.sun.tools.javac.tree.JCTree.JCMethodInvocation;
 import com.sun.tools.javac.tree.JCTree.JCModifiers;
@@ -102,6 +82,29 @@ import com.sun.tools.javac.util.List;
 import com.sun.tools.javac.util.ListBuffer;
 import com.sun.tools.javac.util.Name;
 import com.sun.tools.javac.util.Options;
+
+import lombok.AccessLevel;
+import lombok.ConfigurationKeys;
+import lombok.Data;
+import lombok.Getter;
+import lombok.core.AST.Kind;
+import lombok.core.AnnotationValues;
+import lombok.core.AnnotationValues.AnnotationValue;
+import lombok.core.CleanupTask;
+import lombok.core.LombokImmutableList;
+import lombok.core.TypeResolver;
+import lombok.core.configuration.CheckerFrameworkVersion;
+import lombok.core.configuration.NullCheckExceptionType;
+import lombok.core.configuration.TypeName;
+import lombok.core.handlers.HandlerUtil;
+import lombok.core.handlers.HandlerUtil.FieldAccess;
+import lombok.delombok.LombokOptionsFactory;
+import lombok.experimental.Accessors;
+import lombok.experimental.Tolerate;
+import lombok.javac.Javac;
+import lombok.javac.JavacNode;
+import lombok.javac.JavacTreeMaker;
+import lombok.permit.Permit;
 
 /**
  * Container for static utility methods useful to handlers written for javac.
@@ -265,7 +268,7 @@ public class JavacHandlerUtil {
 	 */
 	public static boolean annotationTypeMatches(Class<? extends Annotation> type, JavacNode node) {
 		if (node.getKind() != Kind.ANNOTATION) return false;
-		return typeMatches(type, node, ((JCAnnotation)node.get()).annotationType);
+		return typeMatches(type, node, ((JCAnnotation) node.get()).annotationType);
 	}
 	
 	/**
@@ -298,9 +301,14 @@ public class JavacHandlerUtil {
 	 * @param typeNode A type reference to check.
 	 */
 	public static boolean typeMatches(String type, JavacNode node, JCTree typeNode) {
-		String typeName = typeNode.toString();
-		
-		TypeResolver resolver = new TypeResolver(node.getImportList());
+		String typeName = typeNode == null ? null : typeNode.toString();
+		if (typeName == null || typeName.length() == 0) return false;
+		int lastIndexA = typeName.lastIndexOf('.') + 1;
+		int lastIndexB = Math.max(type.lastIndexOf('.'), type.lastIndexOf('$')) + 1;
+		int len = typeName.length() - lastIndexA;
+		if (len != type.length() - lastIndexB) return false;
+		for (int i = 0; i < len; i++) if (typeName.charAt(i + lastIndexA) != type.charAt(i + lastIndexB)) return false;
+		TypeResolver resolver = node.getImportListAsTypeResolver();
 		return resolver.typeMatches(node, type, typeName);
 	}
 	
@@ -321,6 +329,11 @@ public class JavacHandlerUtil {
 			}
 		}
 		return false;
+	}
+	
+	public static CheckerFrameworkVersion getCheckerFrameworkVersion(JavacNode node) {
+		CheckerFrameworkVersion cfv = node.getAst().readConfiguration(ConfigurationKeys.CHECKER_FRAMEWORK);
+		return cfv == null ? CheckerFrameworkVersion.NONE : cfv;
 	}
 	
 	/**
@@ -577,20 +590,20 @@ public class JavacHandlerUtil {
 	}
 	
 	/**
-	 * Translates the given field into all possible wither names.
-	 * Convenient wrapper around {@link TransformationsUtil#toAllWitherNames(lombok.core.AnnotationValues, CharSequence, boolean)}.
+	 * Translates the given field into all possible with names.
+	 * Convenient wrapper around {@link TransformationsUtil#toAllWithNames(lombok.core.AnnotationValues, CharSequence, boolean)}.
 	 */
-	public static java.util.List<String> toAllWitherNames(JavacNode field) {
-		return HandlerUtil.toAllWitherNames(field.getAst(), getAccessorsForField(field), field.getName(), isBoolean(field));
+	public static java.util.List<String> toAllWithNames(JavacNode field) {
+		return HandlerUtil.toAllWithNames(field.getAst(), getAccessorsForField(field), field.getName(), isBoolean(field));
 	}
 	
 	/**
-	 * @return the likely wither name for the stated field. (e.g. private boolean foo; to withFoo).
+	 * @return the likely with name for the stated field. (e.g. private boolean foo; to withFoo).
 	 * 
-	 * Convenient wrapper around {@link TransformationsUtil#toWitherName(lombok.core.AnnotationValues, CharSequence, boolean)}.
+	 * Convenient wrapper around {@link TransformationsUtil#toWithName(lombok.core.AnnotationValues, CharSequence, boolean)}.
 	 */
-	public static String toWitherName(JavacNode field) {
-		return HandlerUtil.toWitherName(field.getAst(), getAccessorsForField(field), field.getName(), isBoolean(field));
+	public static String toWithName(JavacNode field) {
+		return HandlerUtil.toWithName(field.getAst(), getAccessorsForField(field), field.getName(), isBoolean(field));
 	}
 	
 	/**
@@ -1259,7 +1272,7 @@ public class JavacHandlerUtil {
 		}
 	}
 	
-	private static void addAnnotation(JCModifiers mods, JavacNode node, int pos, JCTree source, Context context, String annotationTypeFqn, JCExpression arg) {
+	public static void addAnnotation(JCModifiers mods, JavacNode node, int pos, JCTree source, Context context, String annotationTypeFqn, JCExpression arg) {
 		boolean isJavaLangBased;
 		String simpleName; {
 			int idx = annotationTypeFqn.lastIndexOf('.');
@@ -1411,6 +1424,15 @@ public class JavacHandlerUtil {
 		return false;
 	}
 	
+	public static boolean hasNonNullAnnotations(JavacNode node, List<JCAnnotation> anns) {
+		if (anns == null) return false;
+		for (JCAnnotation ann : anns) {
+			for (String nn : NONNULL_ANNOTATIONS) if (typeMatches(nn, node, ann)) return true;
+		}
+		
+		return false;
+	}
+	
 	/**
 	 * Searches the given field node for annotations and returns each one that is 'copyable' (either via configuration or from the base list).
 	 */
@@ -1434,7 +1456,7 @@ public class JavacHandlerUtil {
 		java.util.List<TypeName> configuredCopyable = node.getAst().readConfiguration(ConfigurationKeys.COPYABLE_ANNOTATIONS);
 		
 		if (!annoName.isEmpty()) {
-			for (TypeName cn : configuredCopyable) if (typeMatches(cn.toString(), node, anno.annotationType)) return List.of(anno);
+			for (TypeName cn : configuredCopyable) if (cn != null && typeMatches(cn.toString(), node, anno.annotationType)) return List.of(anno);
 			for (String bn : BASE_COPYABLE_ANNOTATIONS) if (typeMatches(bn, node, anno.annotationType)) return List.of(anno);
 		}
 		
@@ -1443,7 +1465,7 @@ public class JavacHandlerUtil {
 			if (child.getKind() == Kind.ANNOTATION) {
 				JCAnnotation annotation = (JCAnnotation) child.get();
 				boolean match = false;
-				for (TypeName cn : configuredCopyable) if (typeMatches(cn.toString(), node, annotation.annotationType)) {
+				for (TypeName cn : configuredCopyable) if (cn != null && typeMatches(cn.toString(), node, annotation.annotationType)) {
 					result.append(annotation);
 					match = true;
 					break;
@@ -1458,13 +1480,78 @@ public class JavacHandlerUtil {
 	}
 	
 	/**
+	 * Searches the given field node for annotations that are specifically intentioned to be copied to the setter.
+	 */
+	public static List<JCAnnotation> findCopyableToSetterAnnotations(JavacNode node) {
+		JCAnnotation anno = null;
+		String annoName = null;
+		for (JavacNode child : node.down()) {
+			if (child.getKind() == Kind.ANNOTATION) {
+				if (anno != null) {
+					annoName = "";
+					break;
+				}
+				JCAnnotation annotation = (JCAnnotation) child.get();
+				annoName = annotation.annotationType.toString();
+				anno = annotation;
+			}
+		}
+		
+		if (annoName == null) return List.nil();
+		
+		if (!annoName.isEmpty()) {
+			for (String bn : COPY_TO_SETTER_ANNOTATIONS) if (typeMatches(bn, node, anno.annotationType)) return List.of(anno);
+		}
+		
+		ListBuffer<JCAnnotation> result = new ListBuffer<JCAnnotation>();
+		for (JavacNode child : node.down()) {
+			if (child.getKind() == Kind.ANNOTATION) {
+				JCAnnotation annotation = (JCAnnotation) child.get();
+				boolean match = false;
+				if (!match) for (String bn : COPY_TO_SETTER_ANNOTATIONS) if (typeMatches(bn, node, annotation.annotationType)) {
+					result.append(annotation);
+					break;
+				}
+			}
+		}
+		return result.toList();
+	}
+	
+	/**
 	 * Generates a new statement that checks if the given variable is null, and if so, throws a configured exception with the
 	 * variable name as message.
 	 */
 	public static JCStatement generateNullCheck(JavacTreeMaker maker, JavacNode variable, JavacNode source) {
-		return generateNullCheck(maker, variable, (JCVariableDecl) variable.get(), source);
+		return generateNullCheck(maker, (JCVariableDecl) variable.get(), source);
 	}
-
+	
+	/**
+	 * Generates a new statement that checks if the given local is null, and if so, throws a configured exception with the
+	 * local variable name as message. 
+	 */
+	public static JCStatement generateNullCheck(JavacTreeMaker maker, JCExpression typeNode, Name varName, JavacNode source) {
+		NullCheckExceptionType exceptionType = source.getAst().readConfiguration(ConfigurationKeys.NON_NULL_EXCEPTION_TYPE);
+		if (exceptionType == null) exceptionType = NullCheckExceptionType.NULL_POINTER_EXCEPTION;
+		
+		if (isPrimitive(typeNode)) return null;
+		JCLiteral message = maker.Literal(exceptionType.toExceptionMessage(varName.toString()));
+		
+		LombokImmutableList<String> method = exceptionType.getMethod();
+		if (method != null) {
+			return maker.Exec(maker.Apply(List.<JCExpression>nil(), chainDots(source, method), List.of(maker.Ident(varName), message)));
+		}
+		
+		if (exceptionType == NullCheckExceptionType.ASSERTION) {
+			return maker.Assert(maker.Binary(CTC_NOT_EQUAL, maker.Ident(varName), maker.Literal(CTC_BOT, null)), message);
+		}
+		
+		JCExpression exType = genTypeRef(source, exceptionType.getExceptionType());
+		JCExpression exception = maker.NewClass(null, List.<JCExpression>nil(), exType, List.<JCExpression>of(message), null);
+		JCStatement throwStatement = maker.Throw(exception);
+		JCBlock throwBlock = maker.Block(0, List.of(throwStatement));
+		return maker.If(maker.Binary(CTC_EQUAL, maker.Ident(varName), maker.Literal(CTC_BOT, null)), throwBlock, null);
+	}
+	
 	/**
 	 * Generates a new statement that checks if the given variable is null, and if so, throws a configured exception with the
 	 * variable name as message. 
@@ -1473,17 +1560,8 @@ public class JavacHandlerUtil {
 	 * variable's declaration, i.e. in a constructor or setter where the local parameter is named the same but with the prefix
 	 * stripped as a result of @Accessors.prefix.
 	 */
-	public static JCStatement generateNullCheck(JavacTreeMaker maker, JavacNode variable, JCVariableDecl varDecl, JavacNode source) {
-		NullCheckExceptionType exceptionType = source.getAst().readConfiguration(ConfigurationKeys.NON_NULL_EXCEPTION_TYPE);
-		if (exceptionType == null) exceptionType = NullCheckExceptionType.NULL_POINTER_EXCEPTION;
-		
-		if (isPrimitive(varDecl.vartype)) return null;
-		Name fieldName = varDecl.name;
-		JCExpression exType = genTypeRef(variable, exceptionType.getExceptionType());
-		JCExpression exception = maker.NewClass(null, List.<JCExpression>nil(), exType, List.<JCExpression>of(maker.Literal(exceptionType.toExceptionMessage(fieldName.toString()))), null);
-		JCStatement throwStatement = maker.Throw(exception);
-		JCBlock throwBlock = maker.Block(0, List.of(throwStatement));
-		return maker.If(maker.Binary(CTC_EQUAL, maker.Ident(fieldName), maker.Literal(CTC_BOT, null)), throwBlock, null);
+	public static JCStatement generateNullCheck(JavacTreeMaker maker, JCVariableDecl varDecl, JavacNode source) {
+		return generateNullCheck(maker, varDecl.vartype, varDecl.name, source);
 	}
 	
 	/**
@@ -1691,6 +1769,15 @@ public class JavacHandlerUtil {
 		return out.toList();
 	}
 	
+	static List<JCAnnotation> mergeAnnotations(List<JCAnnotation> a, List<JCAnnotation> b) {
+		if (a == null || a.isEmpty()) return b;
+		if (b == null || b.isEmpty()) return a;
+		ListBuffer<JCAnnotation> out = new ListBuffer<JCAnnotation>();
+		for (JCAnnotation ann : a) out.append(ann);
+		for (JCAnnotation ann : b) out.append(ann);
+		return out.toList();
+	}
+	
 	static boolean isClass(JavacNode typeNode) {
 		return isClassAndDoesNotHaveFlags(typeNode, Flags.INTERFACE | Flags.ENUM | Flags.ANNOTATION);
 	}
@@ -1796,7 +1883,7 @@ public class JavacHandlerUtil {
 		return (JCExpression) in;
 	}
 	
-	private static final Pattern SECTION_FINDER = Pattern.compile("^\\s*\\**\\s*[-*][-*]+\\s*([GS]ETTER|WITHER)\\s*[-*][-*]+\\s*\\**\\s*$", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
+	private static final Pattern SECTION_FINDER = Pattern.compile("^\\s*\\**\\s*[-*][-*]+\\s*([GS]ETTER|WITH(?:ER)?)\\s*[-*][-*]+\\s*\\**\\s*$", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
 	
 	public static String stripLinesWithTagFromJavadoc(String javadoc, String regexpFragment) {
 		Pattern p = Pattern.compile("^\\s*\\**\\s*" + regexpFragment + "\\s*\\**\\s*$", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
@@ -1811,12 +1898,18 @@ public class JavacHandlerUtil {
 		return javadoc.substring(0, m.start());
 	}
 	
-	public static String getJavadocSection(String javadoc, String sectionName) {
+	public static String getJavadocSection(String javadoc, String sectionNameSpec) {
+		String[] sectionNames = sectionNameSpec.split("\\|");
 		Matcher m = SECTION_FINDER.matcher(javadoc);
 		int sectionStart = -1;
 		int sectionEnd = -1;
 		while (m.find()) {
-			if (m.group(1).equalsIgnoreCase(sectionName)) {
+			boolean found = false;
+			for (String sectionName : sectionNames) if (m.group(1).equalsIgnoreCase(sectionName)) {
+				found = true;
+				break;
+			}
+			if (found) {
 				sectionStart = m.end() + 1;
 			} else if (sectionStart != -1) {
 				sectionEnd = m.start();
@@ -1866,9 +1959,9 @@ public class JavacHandlerUtil {
 				return applySetter(cu, node, "SETTER");
 			}
 		},
-		WITHER {
+		WITH {
 			@Override public String apply(final JCCompilationUnit cu, final JavacNode node) {
-				return applySetter(cu, node, "WITHER");
+				return applySetter(cu, node, "WITH|WITHER");
 			}
 		};
 		

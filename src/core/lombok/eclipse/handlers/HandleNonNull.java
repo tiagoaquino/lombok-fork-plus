@@ -21,11 +21,33 @@
  */
 package lombok.eclipse.handlers;
 
-import static lombok.core.handlers.HandlerUtil.*;
+import static lombok.core.handlers.HandlerUtil.handleFlagUsage;
 import static lombok.eclipse.Eclipse.isPrimitive;
 import static lombok.eclipse.handlers.EclipseHandlerUtil.*;
 
 import java.util.Arrays;
+
+import org.eclipse.jdt.internal.compiler.ast.ASTNode;
+import org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration;
+import org.eclipse.jdt.internal.compiler.ast.AbstractVariableDeclaration;
+import org.eclipse.jdt.internal.compiler.ast.Annotation;
+import org.eclipse.jdt.internal.compiler.ast.Argument;
+import org.eclipse.jdt.internal.compiler.ast.AssertStatement;
+import org.eclipse.jdt.internal.compiler.ast.Assignment;
+import org.eclipse.jdt.internal.compiler.ast.Block;
+import org.eclipse.jdt.internal.compiler.ast.EqualExpression;
+import org.eclipse.jdt.internal.compiler.ast.Expression;
+import org.eclipse.jdt.internal.compiler.ast.IfStatement;
+import org.eclipse.jdt.internal.compiler.ast.MessageSend;
+import org.eclipse.jdt.internal.compiler.ast.NullLiteral;
+import org.eclipse.jdt.internal.compiler.ast.OperatorIds;
+import org.eclipse.jdt.internal.compiler.ast.SingleNameReference;
+import org.eclipse.jdt.internal.compiler.ast.Statement;
+import org.eclipse.jdt.internal.compiler.ast.SynchronizedStatement;
+import org.eclipse.jdt.internal.compiler.ast.ThrowStatement;
+import org.eclipse.jdt.internal.compiler.ast.TryStatement;
+import org.eclipse.jdt.internal.compiler.ast.TypeReference;
+import org.mangosdk.spi.ProviderFor;
 
 import lombok.ConfigurationKeys;
 import lombok.NonNull;
@@ -37,29 +59,13 @@ import lombok.eclipse.EclipseAST;
 import lombok.eclipse.EclipseAnnotationHandler;
 import lombok.eclipse.EclipseNode;
 
-import org.eclipse.jdt.internal.compiler.ast.ASTNode;
-import org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration;
-import org.eclipse.jdt.internal.compiler.ast.AbstractVariableDeclaration;
-import org.eclipse.jdt.internal.compiler.ast.Annotation;
-import org.eclipse.jdt.internal.compiler.ast.Argument;
-import org.eclipse.jdt.internal.compiler.ast.Block;
-import org.eclipse.jdt.internal.compiler.ast.EqualExpression;
-import org.eclipse.jdt.internal.compiler.ast.Expression;
-import org.eclipse.jdt.internal.compiler.ast.IfStatement;
-import org.eclipse.jdt.internal.compiler.ast.NullLiteral;
-import org.eclipse.jdt.internal.compiler.ast.OperatorIds;
-import org.eclipse.jdt.internal.compiler.ast.SingleNameReference;
-import org.eclipse.jdt.internal.compiler.ast.Statement;
-import org.eclipse.jdt.internal.compiler.ast.SynchronizedStatement;
-import org.eclipse.jdt.internal.compiler.ast.ThrowStatement;
-import org.eclipse.jdt.internal.compiler.ast.TryStatement;
-import org.eclipse.jdt.internal.compiler.ast.TypeReference;
-import org.mangosdk.spi.ProviderFor;
-
 @DeferUntilPostDiet
 @ProviderFor(EclipseAnnotationHandler.class)
 @HandlerPriority(value = 512) // 2^9; onParameter=@__(@NonNull) has to run first.
 public class HandleNonNull extends EclipseAnnotationHandler<NonNull> {
+	private static final char[] REQUIRE_NON_NULL = "requireNonNull".toCharArray();
+	private static final char[] CHECK_NOT_NULL = "checkNotNull".toCharArray();
+	
 	public static final HandleNonNull INSTANCE = new HandleNonNull();
 	
 	public void fix(EclipseNode method) {
@@ -191,9 +197,26 @@ public class HandleNonNull extends EclipseAnnotationHandler<NonNull> {
 	}
 	
 	public char[] returnVarNameIfNullCheck(Statement stat) {
-		if (!(stat instanceof IfStatement)) return null;
+		boolean isIf = stat instanceof IfStatement;
+		boolean isExpression = stat instanceof Expression;
+		if (!isIf && !(stat instanceof AssertStatement) && !isExpression) return null;
 		
-		/* Check that the if's statement is a throw statement, possibly in a block. */ {
+		if (isExpression) {
+			/* Check if the statements contains a call to checkNotNull or requireNonNull */
+			Expression expression = (Expression) stat;
+			if (expression instanceof Assignment) expression = ((Assignment) expression).expression;
+			if (!(expression instanceof MessageSend)) return null;
+			
+			MessageSend invocation = (MessageSend) expression;
+			if (!Arrays.equals(invocation.selector, CHECK_NOT_NULL) && !Arrays.equals(invocation.selector, REQUIRE_NON_NULL)) return null;
+			if (invocation.arguments == null || invocation.arguments.length == 0) return null;
+			Expression firstArgument = invocation.arguments[0];
+			if (!(firstArgument instanceof SingleNameReference)) return null;
+			return ((SingleNameReference) firstArgument).token;
+		}
+		
+		if (isIf) {
+			/* Check that the if's statement is a throw statement, possibly in a block. */
 			Statement then = ((IfStatement) stat).thenStatement;
 			if (then instanceof Block) {
 				Statement[] blockStatements = ((Block) then).statements;
@@ -206,11 +229,15 @@ public class HandleNonNull extends EclipseAnnotationHandler<NonNull> {
 		
 		/* Check that the if's conditional is like 'x == null'. Return from this method (don't generate
 		   a nullcheck) if 'x' is equal to our own variable's name: There's already a nullcheck here. */ {
-			Expression cond = ((IfStatement) stat).condition;
+			Expression cond = isIf ? ((IfStatement) stat).condition : ((AssertStatement) stat).assertExpression;
 			if (!(cond instanceof EqualExpression)) return null;
 			EqualExpression bin = (EqualExpression) cond;
 			int operatorId = ((bin.bits & ASTNode.OperatorMASK) >> ASTNode.OperatorSHIFT);
-			if (operatorId != OperatorIds.EQUAL_EQUAL) return null;
+			if (isIf) {
+				if (operatorId != OperatorIds.EQUAL_EQUAL) return null;
+			} else {
+				if (operatorId != OperatorIds.NOT_EQUAL) return null;
+			}
 			if (!(bin.left instanceof SingleNameReference)) return null;
 			if (!(bin.right instanceof NullLiteral)) return null;
 			return ((SingleNameReference) bin.left).token;

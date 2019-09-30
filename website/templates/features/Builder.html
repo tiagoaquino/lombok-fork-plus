@@ -10,6 +10,10 @@
 			<code>@Builder</code> with <code>@Singular</code> adds a clear method since lombok v1.16.8.
 		</p><p>
 			<code>@Builder.Default</code> functionality was added in lombok v1.16.16.
+		</p><p>
+			<code>@Builder(builderMethodName = "")</code> is legal (and will suppress generation of the builder method) starting with lombok v1.18.8.
+		</p><p>
+			<code>@Builder(access = AccessLevel.PACKAGE)</code> is legal (and will generate the builder class, the builder method, etc with the indicated access level) starting with lombok v1.18.8.
 		</p>
 	</@f.history>
 	
@@ -46,7 +50,7 @@
 		</p><p>
 			Now that the "method" mode is clear, putting a <code>@Builder</code> annotation on a constructor functions similarly; effectively, constructors are just static methods that have a special syntax to invoke them: Their 'return type' is the class they construct, and their type parameters are the same as the type parameters of the class itself.
 		</p><p>
-			Finally, applying <code>@Builder</code> to a class is as if you added <code>@AllArgsConstructor(access = AccessLevel.PACKAGE)</code> to the class and applied the <code>@Builder</code> annotation to this all-args-constructor. This only works if you haven't written any explicit constructors yourself. If you do have an explicit constructor, put the <code>@Builder</code> annotation on the constructor instead of on the class.
+			Finally, applying <code>@Builder</code> to a class is as if you added <code>@AllArgsConstructor(access = AccessLevel.PACKAGE)</code> to the class and applied the <code>@Builder</code> annotation to this all-args-constructor. This only works if you haven't written any explicit constructors yourself. If you do have an explicit constructor, put the <code>@Builder</code> annotation on the constructor instead of on the class. Note that if you put both `@Value` and `@Builder` on a class, the package-private constructor that `@Builder` wants to generate 'wins' and suppresses the constructor that `@Value` wants to make.
 		</p><p>
 			If using <code>@Builder</code> to generate builders to produce instances of your own class (this is always the case unless adding <code>@Builder</code> to a method that doesn't return your own type), you can use <code>@Builder(toBuilder = true)</code> to also generate an instance method in your class called <code>toBuilder()</code>; it creates a new builder that starts out with all the values of this instance. You can put the <code>@Builder.ObtainVia</code> annotation on the parameters (in case of a constructor or method) or fields (in case of <code>@Builder</code> on a type) to indicate alternative means by which the value for that field/parameter is obtained from this instance. For example, you can specify a method to be invoked: <code>@Builder.ObtainVia(method = "calculateFoo")</code>.
 		</p><p>
@@ -62,10 +66,12 @@
 					The <em>builder()</em> method's name (default: <code>"builder"</code>)
 				</li><li>
 					If you want <code>toBuilder()</code> (default: no)
+				</li><li>
+					The access level of all generated elements (default: <code>public</code>).
 				</li>
 			</ul>
 			Example usage where all options are changed from their defaults:<br />
-			<code>@Builder(builderClassName = "HelloWorldBuilder", buildMethodName = "execute", builderMethodName = "helloWorld", toBuilder = true)</code><br />
+			<code>@Builder(builderClassName = "HelloWorldBuilder", buildMethodName = "execute", builderMethodName = "helloWorld", toBuilder = true, access = AccessLevel.PRIVATE)</code><br />
 		</p>
 	</@f.overview>
 	
@@ -154,6 +160,10 @@ public class JacksonExample {
 
 	<@f.confKeys>
 		<dt>
+			<code>lombok.builder.className</code> = [a java identifier with an optional star to indicate where the return type name goes] (default: <code>*Builder</code>)
+		</dt><dd>
+			Unless you explicitly pick the builder's class name with the <code>builderClassName</code> parameter, this name is chosen; any star in the name is replaced with the relevant return type.
+		</dd><dt>
 			<code>lombok.builder.flagUsage</code> = [<code>warning</code> | <code>error</code>] (default: not set)
 		</dt><dd>
 			Lombok will flag any usage of <code>@Builder</code> as a warning or error if configured.
@@ -182,7 +192,21 @@ public class JacksonExample {
 		</p><p>
 			The initializer on a <code>@Builder.Default</code> field is removed and stored in a static method, in order to guarantee that this initializer won't be executed at all if a value is specified in the build. This does mean the initializer cannot refer to <code>this</code>, <code>super</code> or any non-static member. If lombok generates a constructor for you, it'll also initialize this field with the initializer.
 		</p><p>
+			The generated field in the builder to represent a field with a <code>@Builder.Default</code> set is called <code><em>propertyName</em>$value</code>; an additional boolean field called <code><em>propertyName</em>$set</code> is also generated to track whether it has been set or not. This is an implementation detail; do not write code that interacts with these fields. Instead, invoke the generated builder-setter method if you want to set the property inside a custom method inside the builder.
+		</p><p>
 			Various well known annotations about nullity cause null checks to be inserted and will be copied to parameter of the builder's 'setter' method. See <a href="/features/GetterSetter">Getter/Setter</a> documentation's small print for more information.
+		</p><p>
+			You can suppress the generation of the <code>builder()</code> method, for example because you <em>just</em> want the <code>toBuilder()</code> functionality, by using:
+			<code>@Builder(builderMethodName = "")</code>. Any warnings about missing <code>@Builder.Default</code> annotations will disappear when you do this, as such warnings
+			are not relevant when only using <code>toBuilder()</code> to make builder instances.
+		</p><p>
+			You can use <code>@Builder</code> for copy constructors: <code>foo.toBuilder().build()</code> makes a shallow clone. Consider suppressing the generating of the
+			<code>builder</code> method if you just want this functionality, by using: <code>@Builder(toBuilder = true, builderMethodName = "")</code>.
+		</p><p>
+			Due to a peculiar way javac processes static imports, trying to do a non-star static import of the static <code>builder()</code> method won't work. Either use a star static import: `import static TypeThatHasABuilder.*;` or don't statically import the <code>builder</code> method.
+		</p><p>
+			If setting the access level to <code>PROTECTED</code>, all methods generated inside the builder class are actually generated as <code>public</code>; the meaning of the
+			<code>protected</code> keyword is different inside the inner class, and the precise behaviour that <code>PROTECTED</code> would indicate (access by any source in the same package is allowed, as well as any subclasses <em>from the outer class, marked with <code>@Builder</code></em> is not possible, and marking the inner members <code>public</code> is as close as we can get.
 		</p>
 	</@f.smallPrint>
 </@f.scaffold>

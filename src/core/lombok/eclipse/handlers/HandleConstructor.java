@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2018 The Project Lombok Authors.
+ * Copyright (C) 2010-2019 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -39,6 +39,7 @@ import lombok.ConfigurationKeys;
 import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.core.AST.Kind;
+import lombok.core.configuration.CheckerFrameworkVersion;
 import lombok.core.AnnotationValues;
 import lombok.eclipse.EclipseAnnotationHandler;
 import lombok.eclipse.EclipseNode;
@@ -242,8 +243,7 @@ public class HandleConstructor {
 			
 		ASTNode source = sourceNode.get();
 		boolean staticConstrRequired = staticName != null && !staticName.equals("");
-		
-		if (skipIfConstructorExists != SkipIfConstructorExists.NO && constructorExists(typeNode) != MemberExistsResult.NOT_EXISTS) return;
+
 		if (skipIfConstructorExists != SkipIfConstructorExists.NO) {
 			for (EclipseNode child : typeNode.down()) {
 				if (child.getKind() == Kind.ANNOTATION) {
@@ -273,12 +273,18 @@ public class HandleConstructor {
 		
 		if (noArgs && noArgsConstructorExists(typeNode)) return;
 		
-		ConstructorDeclaration constr = createConstructor(
-			staticConstrRequired ? AccessLevel.PRIVATE : level, typeNode, fieldsToParam, forceDefaults,
-			sourceNode, onConstructor);
-		injectMethod(typeNode, constr);
+		if (!(skipIfConstructorExists != SkipIfConstructorExists.NO && constructorExists(typeNode) != MemberExistsResult.NOT_EXISTS)) {
+			ConstructorDeclaration constr = createConstructor(
+				staticConstrRequired ? AccessLevel.PRIVATE : level, typeNode, fieldsToParam, forceDefaults,
+				sourceNode, onConstructor);
+			injectMethod(typeNode, constr);
+		}
+		generateStaticConstructor(staticConstrRequired, typeNode, staticName, level, fieldsToParam, source);
+	}
+	
+	private void generateStaticConstructor(boolean staticConstrRequired, EclipseNode typeNode, String staticName, AccessLevel level, Collection<EclipseNode> fields, ASTNode source) {
 		if (staticConstrRequired) {
-			MethodDeclaration staticConstr = createStaticConstructor(level, staticName, typeNode, fieldsToParam, source);
+			MethodDeclaration staticConstr = createStaticConstructor(level, staticName, typeNode, fields, source);
 			injectMethod(typeNode, staticConstr);
 		}
 	}
@@ -451,14 +457,14 @@ public class HandleConstructor {
 		constructor.arguments = params.isEmpty() ? null : params.toArray(new Argument[0]);
 		
 		/* Generate annotations that must  be put on the generated method, and attach them. */ {
-			Annotation[] constructorProperties = null;
-			if (addConstructorProperties && !isLocalType(type)) {
-				constructorProperties = createConstructorProperties(source, fieldsToParam);
-			}
+			Annotation[] constructorProperties = null, checkerFramework = null;
+			if (addConstructorProperties && !isLocalType(type)) constructorProperties = createConstructorProperties(source, fieldsToParam);
+			if (getCheckerFrameworkVersion(type).generateUnique()) checkerFramework = new Annotation[] { generateNamedAnnotation(source, CheckerFrameworkVersion.NAME__UNIQUE) };
 			
 			constructor.annotations = copyAnnotations(source,
 				onConstructor.toArray(new Annotation[0]),
-				constructorProperties);
+				constructorProperties,
+				checkerFramework);
 		}
 		
 		constructor.traverse(new SetGeneratedByVisitor(source), typeDeclaration.scope);
@@ -546,7 +552,9 @@ public class HandleConstructor {
 			assigns.add(nameRef);
 			
 			Argument parameter = new Argument(field.name, fieldPos, copyType(field.type, source), Modifier.FINAL);
-			parameter.annotations = copyAnnotations(source, findCopyableAnnotations(fieldNode));
+			Annotation[] checkerFramework = null;
+			if (getCheckerFrameworkVersion(fieldNode).generateUnique()) checkerFramework = new Annotation[] { generateNamedAnnotation(source, CheckerFrameworkVersion.NAME__UNIQUE) };
+			parameter.annotations = copyAnnotations(source, findCopyableAnnotations(fieldNode), checkerFramework);
 			params.add(parameter);
 		}
 		

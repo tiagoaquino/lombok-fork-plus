@@ -38,6 +38,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import lombok.Value;
+import lombok.With;
 import lombok.core.AST;
 import lombok.core.AnnotationValues;
 import lombok.core.JavaIdentifiers;
@@ -47,7 +48,6 @@ import lombok.core.configuration.ConfigurationKey;
 import lombok.core.configuration.FlagUsageType;
 import lombok.experimental.Accessors;
 import lombok.experimental.FieldDefaults;
-import lombok.experimental.Wither;
 
 /**
  * Container for static utility methods useful for some of the standard lombok handlers, regardless of
@@ -76,7 +76,7 @@ public class HandlerUtil {
 		return 43;
 	}
 	
-	public static final List<String> NONNULL_ANNOTATIONS, BASE_COPYABLE_ANNOTATIONS;
+	public static final List<String> NONNULL_ANNOTATIONS, BASE_COPYABLE_ANNOTATIONS, COPY_TO_SETTER_ANNOTATIONS;
 	static {
 		NONNULL_ANNOTATIONS = Collections.unmodifiableList(Arrays.asList(new String[] {
 			"android.annotation.NonNull",
@@ -84,8 +84,7 @@ public class HandlerUtil {
 			"com.sun.istack.internal.NotNull",
 			"edu.umd.cs.findbugs.annotations.NonNull",
 			"javax.annotation.Nonnull",
-                        // The field might contain a null value until it is persisted.
-			// "javax.validation.constraints.NotNull",
+			// "javax.validation.constraints.NotNull", // The field might contain a null value until it is persisted.
 			"lombok.NonNull",
 			"org.checkerframework.checker.nullness.qual.NonNull",
 			"org.eclipse.jdt.annotation.NonNull",
@@ -93,7 +92,7 @@ public class HandlerUtil {
 			"org.jetbrains.annotations.NotNull",
 			"org.jmlspecs.annotation.NonNull",
 			"org.netbeans.api.annotations.common.NonNull",
-			"org.springframework.lang.NonNull"
+			"org.springframework.lang.NonNull",
 		}));
 		BASE_COPYABLE_ANNOTATIONS = Collections.unmodifiableList(Arrays.asList(new String[] {
 			"android.support.annotation.NonNull",
@@ -105,8 +104,8 @@ public class HandlerUtil {
 			"javax.annotation.Nonnull",
 			"javax.annotation.Nullable",
 			"lombok.NonNull",
-                        // To update Checker Framework annotations, run:
-                        // grep --recursive --files-with-matches -e '^@Target\b.*TYPE_USE' $CHECKERFRAMEWORK/checker/src/main/java  $CHECKERFRAMEWORK/framework/src/main/java | grep '\.java$' | sed 's/.*\/java\//\t\t\t"/' | sed 's/\.java$/",/' | sed 's/\//./g' | sort
+			// To update Checker Framework annotations, run:
+			// grep --recursive --files-with-matches -e '^@Target\b.*TYPE_USE' $CHECKERFRAMEWORK/checker/src/main/java  $CHECKERFRAMEWORK/framework/src/main/java | grep '\.java$' | sed 's/.*\/java\//\t\t\t"/' | sed 's/\.java$/",/' | sed 's/\//./g' | sort
 			"org.checkerframework.checker.compilermsgs.qual.CompilerMessageKey",
 			"org.checkerframework.checker.compilermsgs.qual.CompilerMessageKeyBottom",
 			"org.checkerframework.checker.compilermsgs.qual.UnknownCompilerMessageKey",
@@ -293,13 +292,18 @@ public class HandlerUtil {
 			"org.checkerframework.common.value.qual.UnknownVal",
 			"org.checkerframework.framework.qual.PolyAll",
 			"org.checkerframework.framework.util.PurityUnqualified",
+			
 			"org.eclipse.jdt.annotation.NonNull",
 			"org.eclipse.jdt.annotation.Nullable",
 			"org.jetbrains.annotations.NotNull",
 			"org.jetbrains.annotations.Nullable",
 			"org.springframework.lang.NonNull",
-			"org.springframework.lang.Nullable"
+			"org.springframework.lang.Nullable",
 		}));
+		COPY_TO_SETTER_ANNOTATIONS = Collections.unmodifiableList(Arrays.asList(new String[] {
+				"com.fasterxml.jackson.annotation.JsonProperty",
+				"com.fasterxml.jackson.annotation.JsonSetter",
+			}));
 	}
 	
 	/** Checks if the given name is a valid identifier.
@@ -372,7 +376,7 @@ public class HandlerUtil {
 		if (fut != null) {
 			String msg = "Use of " + featureName + " is flagged according to lombok configuration.";
 			if (fut == FlagUsageType.WARNING) node.addWarning(msg);
-			else node.addError(msg);
+			else if (fut == FlagUsageType.ERROR) node.addError(msg);
 		}
 	}
 	
@@ -402,7 +406,7 @@ public class HandlerUtil {
 	@SuppressWarnings({"all", "unchecked", "deprecation"})
 	public static final List<String> INVALID_ON_BUILDERS = Collections.unmodifiableList(
 			Arrays.<String>asList(
-			Getter.class.getName(), Setter.class.getName(), Wither.class.getName(),
+			Getter.class.getName(), Setter.class.getName(), With.class.getName(), "lombok.experimental.Wither",
 			ToString.class.getName(), EqualsAndHashCode.class.getName(), 
 			RequiredArgsConstructor.class.getName(), AllArgsConstructor.class.getName(), NoArgsConstructor.class.getName(), 
 			Data.class.getName(), Value.class.getName(), "lombok.experimental.Value", FieldDefaults.class.getName()));
@@ -498,7 +502,7 @@ public class HandlerUtil {
 	}
 	
 	/**
-	 * Generates a wither name from a given field name.
+	 * Generates a with name from a given field name.
 	 * 
 	 * Strategy:
 	 * <ul>
@@ -514,9 +518,9 @@ public class HandlerUtil {
 	 * @param accessors Accessors configuration.
 	 * @param fieldName the name of the field.
 	 * @param isBoolean if the field is of type 'boolean'. For fields of type {@code java.lang.Boolean}, you should provide {@code false}.
-	 * @return The wither name for this field, or {@code null} if this field does not fit expected patterns and therefore cannot be turned into a getter name.
+	 * @return The with name for this field, or {@code null} if this field does not fit expected patterns and therefore cannot be turned into a getter name.
 	 */
-	public static String toWitherName(AST<?, ?, ?> ast, AnnotationValues<Accessors> accessors, CharSequence fieldName, boolean isBoolean) {
+	public static String toWithName(AST<?, ?, ?> ast, AnnotationValues<Accessors> accessors, CharSequence fieldName, boolean isBoolean) {
 		return toAccessorName(ast, accessors, fieldName, isBoolean, "with", "with", false);
 	}
 	
@@ -578,7 +582,7 @@ public class HandlerUtil {
 	}
 	
 	/**
-	 * Returns all names of methods that would represent the wither for a field with the provided name.
+	 * Returns all names of methods that would represent the with for a field with the provided name.
 	 * 
 	 * For example if {@code isBoolean} is true, then a field named {@code isRunning} would produce:<br />
 	 * {@code [withRunning, withIsRunning]}
@@ -587,7 +591,7 @@ public class HandlerUtil {
 	 * @param fieldName the name of the field.
 	 * @param isBoolean if the field is of type 'boolean'. For fields of type 'java.lang.Boolean', you should provide {@code false}.
 	 */
-	public static List<String> toAllWitherNames(AST<?, ?, ?> ast, AnnotationValues<Accessors> accessors, CharSequence fieldName, boolean isBoolean) {
+	public static List<String> toAllWithNames(AST<?, ?, ?> ast, AnnotationValues<Accessors> accessors, CharSequence fieldName, boolean isBoolean) {
 		return toAllAccessorNames(ast, accessors, fieldName, isBoolean, "with", "with", false);
 	}
 	
