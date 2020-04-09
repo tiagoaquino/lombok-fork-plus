@@ -5,16 +5,16 @@ public @lombok.Builder class BuilderWithBadNames {
     @java.lang.SuppressWarnings("all") BuilderWithBadNamesBuilder() {
       super();
     }
-    public @java.lang.SuppressWarnings("all") BuilderWithBadNamesBuilder build(final String build) {
+    public @java.lang.SuppressWarnings("all") BuilderWithBadNames.BuilderWithBadNamesBuilder build(final String build) {
       this.build = build;
       return this;
     }
-    public @java.lang.SuppressWarnings("all") BuilderWithBadNamesBuilder toString(final String toString) {
+    public @java.lang.SuppressWarnings("all") BuilderWithBadNames.BuilderWithBadNamesBuilder toString(final String toString) {
       this.toString = toString;
       return this;
     }
     public @java.lang.SuppressWarnings("all") BuilderWithBadNames build() {
-      return new BuilderWithBadNames(build, toString);
+      return new BuilderWithBadNames(this.build, this.toString);
     }
     public @java.lang.Override @java.lang.SuppressWarnings("all") java.lang.String toString() {
       return (((("BuilderWithBadNames.BuilderWithBadNamesBuilder(build=" + this.build) + ", toString=") + this.toString) + ")");
@@ -27,7 +27,7 @@ public @lombok.Builder class BuilderWithBadNames {
     this.build = build;
     this.toString = toString;
   }
-  public static @java.lang.SuppressWarnings("all") BuilderWithBadNamesBuilder builder() {
-    return new BuilderWithBadNamesBuilder();
+  public static @java.lang.SuppressWarnings("all") BuilderWithBadNames.BuilderWithBadNamesBuilder builder() {
+    return new BuilderWithBadNames.BuilderWithBadNamesBuilder();
   }
 }

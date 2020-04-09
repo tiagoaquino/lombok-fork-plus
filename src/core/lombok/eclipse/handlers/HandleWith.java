@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2019 The Project Lombok Authors.
+ * Copyright (C) 2012-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -278,7 +278,7 @@ public class HandleWith extends EclipseAnnotationHandler<With> {
 			
 			List<Statement> statements = new ArrayList<Statement>(5);
 			if (hasNonNullAnnotations(fieldNode)) {
-				Statement nullCheck = generateNullCheck(field, sourceNode);
+				Statement nullCheck = generateNullCheck(field, sourceNode, null);
 				if (nullCheck != null) statements.add(nullCheck);
 			}
 			statements.add(returnStatement);
@@ -286,6 +286,8 @@ public class HandleWith extends EclipseAnnotationHandler<With> {
 			method.statements = statements.toArray(new Statement[0]);
 		}
 		param.annotations = copyAnnotations(source, copyableAnnotations, onParam.toArray(new Annotation[0]));
+		
+		EclipseHandlerUtil.createRelevantNonNullAnnotation(fieldNode, method);
 		
 		method.traverse(new SetGeneratedByVisitor(source), parent.scope);
 		return method;

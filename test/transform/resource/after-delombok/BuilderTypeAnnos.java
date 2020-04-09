@@ -23,13 +23,13 @@ class BuilderTypeAnnos {
 		BuilderTypeAnnosBuilder() {
 		}
 		@java.lang.SuppressWarnings("all")
-		public BuilderTypeAnnosBuilder foo(@TA final List<String> foo) {
+		public BuilderTypeAnnos.BuilderTypeAnnosBuilder foo(@TA final List<String> foo) {
 			this.foo = foo;
 			return this;
 		}
 		@java.lang.SuppressWarnings("all")
 		public BuilderTypeAnnos build() {
-			return new BuilderTypeAnnos(foo);
+			return new BuilderTypeAnnos(this.foo);
 		}
 		@java.lang.Override
 		@java.lang.SuppressWarnings("all")
@@ -38,8 +38,8 @@ class BuilderTypeAnnos {
 		}
 	}
 	@java.lang.SuppressWarnings("all")
-	public static BuilderTypeAnnosBuilder builder() {
-		return new BuilderTypeAnnosBuilder();
+	public static BuilderTypeAnnos.BuilderTypeAnnosBuilder builder() {
+		return new BuilderTypeAnnos.BuilderTypeAnnosBuilder();
 	}
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2018 The Project Lombok Authors.
+ * Copyright (C) 2014-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,16 +21,17 @@
  */
 package lombok.core.configuration;
 
-import static lombok.core.configuration.FileSystemSourceCache.fileToString;
-
 import java.io.File;
+import java.io.IOException;
 import java.io.PrintStream;
 import java.net.URI;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -40,19 +41,21 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
-import lombok.ConfigurationKeys;
-import lombok.core.LombokApp;
-import lombok.core.configuration.ConfigurationParser.Collector;
-
 import org.mangosdk.spi.ProviderFor;
 
 import com.zwitserloot.cmdreader.CmdReader;
 import com.zwitserloot.cmdreader.Description;
 import com.zwitserloot.cmdreader.Excludes;
+import com.zwitserloot.cmdreader.FullName;
 import com.zwitserloot.cmdreader.InvalidCommandLineException;
 import com.zwitserloot.cmdreader.Mandatory;
+import com.zwitserloot.cmdreader.Requires;
 import com.zwitserloot.cmdreader.Sequential;
 import com.zwitserloot.cmdreader.Shorthand;
+
+import lombok.ConfigurationKeys;
+import lombok.core.LombokApp;
+import lombok.core.configuration.ConfigurationParser.Collector;
 
 @ProviderFor(LombokApp.class)
 public class ConfigurationApp extends LombokApp {
@@ -88,6 +91,12 @@ public class ConfigurationApp extends LombokApp {
 		@Description("Displays more information.")
 		boolean verbose = false;
 		
+		@Shorthand("n")
+		@FullName("not-mentioned")
+		@Requires("verbose")
+		@Description("Also display files that don't mention the key.")
+		boolean notMentioned = false;
+		
 		@Shorthand("k")
 		@Description("Limit the result to these keys.")
 		private List<String> key = new ArrayList<String>();
@@ -121,7 +130,7 @@ public class ConfigurationApp extends LombokApp {
 			return generate(keys, verbose, !args.key.isEmpty());
 		}
 		
-		return display(keys, verbose, args.paths, !args.key.isEmpty());
+		return display(keys, verbose, args.paths, !args.key.isEmpty(), args.notMentioned);
 	}
 	
 	public ConfigurationApp redirectOutput(PrintStream out, PrintStream err) {
@@ -167,7 +176,7 @@ public class ConfigurationApp extends LombokApp {
 		return 0;
 	}
 	
-	public int display(Collection<ConfigurationKey<?>> keys, boolean verbose, Collection<String> argsPaths, boolean explicitKeys) throws Exception {
+	public int display(Collection<ConfigurationKey<?>> keys, boolean verbose, Collection<String> argsPaths, boolean explicitKeys, boolean notMentioned) throws Exception {
 		TreeMap<URI, Set<String>> sharedDirectories = findSharedDirectories(argsPaths);
 		
 		if (sharedDirectories == null) return 1;
@@ -190,6 +199,7 @@ public class ConfigurationApp extends LombokApp {
 		};
 		
 		FileSystemSourceCache cache = new FileSystemSourceCache();
+		ConfigurationParser parser = new ConfigurationParser(reporter);
 		boolean first = true;
 		for (Entry<URI, Set<String>> entry : sharedDirectories.entrySet()) {
 			if (!first) {
@@ -204,8 +214,8 @@ public class ConfigurationApp extends LombokApp {
 				out.println();
 			}
 			URI directory = entry.getKey();
-			ConfigurationResolver resolver = new BubblingConfigurationResolver(cache.sourcesForDirectory(directory, reporter));
-			Map<ConfigurationKey<?>, ? extends Collection<String>> traces = trace(keys, directory);
+			ConfigurationResolver resolver = new BubblingConfigurationResolver(cache.forUri(directory), cache.fileToSource(parser));
+			Map<ConfigurationKey<?>, ? extends Collection<String>> traces = trace(keys, directory, notMentioned);
 			boolean printed = false;
 			for (ConfigurationKey<?> key : keys) {
 				Object value = resolver.resolve(key);
@@ -221,8 +231,8 @@ public class ConfigurationApp extends LombokApp {
 		}
 		
 		if (!problems.isEmpty()) {
-			out.printf("%nProblems in the configuration files: %n");
-			for (String problem : problems) out.printf("- %s%n", problem);
+			err.printf("Problems in the configuration files:%n");
+			for (String problem : problems) err.printf("- %s%n", problem);
 		}
 		
 		return 0;
@@ -247,39 +257,52 @@ public class ConfigurationApp extends LombokApp {
 		@Override public void report(String sourceDescription, String problem, int lineNumber, CharSequence line) {}
 	};
 	
-	private Map<ConfigurationKey<?>, ? extends Collection<String>> trace(Collection<ConfigurationKey<?>> keys, URI directory) throws Exception {
+	private Map<ConfigurationKey<?>, ? extends Collection<String>> trace(Collection<ConfigurationKey<?>> keys, URI directory, boolean notMentioned) throws Exception {
 		Map<ConfigurationKey<?>, List<String>> result = new HashMap<ConfigurationKey<?>, List<String>>();
 		for (ConfigurationKey<?> key : keys) result.put(key, new ArrayList<String>());
 		Set<ConfigurationKey<?>> used = new HashSet<ConfigurationKey<?>>();
 		
 		boolean stopBubbling = false;
-		String previousFileName = null;
-		for (File currentDirectory = new File(directory); currentDirectory != null && !stopBubbling; currentDirectory = currentDirectory.getParentFile()) {
-			File configFile = new File(currentDirectory, "lombok.config");
-			if (!configFile.exists() || !configFile.isFile()) continue;
+		Collection<ConfigurationFile> visited = new HashSet<ConfigurationFile>();
+		for (ConfigurationFile context = ConfigurationFile.forDirectory(new File(directory)); context != null && !stopBubbling; context = context.parent()) {
+			if (!context.exists()) continue;
 			
-			Map<ConfigurationKey<?>, List<String>> traces = trace(fileToString(configFile), configFile.getAbsolutePath(), keys);
+			Deque<Source> round = new ArrayDeque<Source>();
+			round.push(new Source(context, context.description()));
 			
-			stopBubbling = stopBubbling(traces.get(ConfigurationKeys.STOP_BUBBLING));
-			for (ConfigurationKey<?> key : keys) {
-				List<String> modifications = traces.get(key);
-				if (modifications == null) {
-					modifications = new ArrayList<String>();
-					modifications.add("     <'" + key.getKeyName() + "' not mentioned>");
-				} else {
-					used.add(key);
+			while (!round.isEmpty()) {
+				Source current = round.pop();
+				if (current == null || !visited.add(current.file) || !current.file.exists()) continue;
+				
+				Map<ConfigurationKey<?>, List<String>> traces = trace(current.file, keys, round);
+				
+				stopBubbling = stopBubbling(traces.get(ConfigurationKeys.STOP_BUBBLING));
+				for (ConfigurationKey<?> key : keys) {
+					List<String> modifications = traces.get(key);
+					if (modifications == null) {
+						modifications = new ArrayList<String>();
+						if (notMentioned) {
+							modifications.add("");
+							modifications.add(current.description + ":");
+							modifications.add("     <'" + key.getKeyName() + "' not mentioned>");
+						}
+					} else {
+						used.add(key);
+						modifications.add(0, current.description + ":");
+						modifications.add(0, "");
+					}
+					result.get(key).addAll(0, modifications);
 				}
-				if (previousFileName != null) {
-					modifications.add("");
-					modifications.add(previousFileName + ":");
-				}
-				result.get(key).addAll(0, modifications);
 			}
-			previousFileName = configFile.getAbsolutePath();
 		}
 		for (ConfigurationKey<?> key : keys) {
 			if (used.contains(key)) {
-				result.get(key).add(0, previousFileName + (stopBubbling ? " (stopped bubbling):" : ":"));
+				List<String> modifications = result.get(key);
+				modifications.remove(0);
+				if (stopBubbling) {
+					String mostRecent = modifications.get(0);
+					modifications.set(0, mostRecent.substring(0, mostRecent.length() - 1) + " (stopped bubbling):");
+				}
 			} else {
 				result.put(key, Collections.<String>emptyList());
 			}
@@ -287,28 +310,41 @@ public class ConfigurationApp extends LombokApp {
 		return result;
 	}
 	
-	private Map<ConfigurationKey<?>, List<String>> trace(String content, String contentDescription, final Collection<ConfigurationKey<?>> keys) {
+	private static final class Source {
+		final ConfigurationFile file;
+		final String description;
+
+		Source(ConfigurationFile file, String description) {
+			this.file = file;
+			this.description = description;
+		}
+	}
+	
+	private Map<ConfigurationKey<?>, List<String>> trace(ConfigurationFile context, final Collection<ConfigurationKey<?>> keys, final Deque<Source> round) throws IOException {
 		final Map<ConfigurationKey<?>, List<String>> result = new HashMap<ConfigurationKey<?>, List<String>>();
 		
 		Collector collector = new Collector() {
-			@Override public void clear(ConfigurationKey<?> key, String contentDescription, int lineNumber) {
+			@Override public void addImport(ConfigurationFile importFile, ConfigurationFile context, int lineNumber) {
+				round.push(new Source(importFile, importFile.description() + " (imported from " + context.description() + ":" + lineNumber + ")"));
+			}
+			@Override public void clear(ConfigurationKey<?> key, ConfigurationFile context, int lineNumber) {
 				trace(key, "clear " + key.getKeyName(), lineNumber);
 			}
-
-			@Override public void set(ConfigurationKey<?> key, Object value, String contentDescription, int lineNumber) {
+			
+			@Override public void set(ConfigurationKey<?> key, Object value, ConfigurationFile context, int lineNumber) {
 				trace(key, key.getKeyName() + " = " + value, lineNumber);
 			}
 			
-			@Override public void add(ConfigurationKey<?> key, Object value, String contentDescription, int lineNumber) {
+			@Override public void add(ConfigurationKey<?> key, Object value, ConfigurationFile context, int lineNumber) {
 				trace(key, key.getKeyName() + " += " + value, lineNumber);
 			}
 			
-			@Override public void remove(ConfigurationKey<?> key, Object value, String contentDescription, int lineNumber) {
+			@Override public void remove(ConfigurationKey<?> key, Object value, ConfigurationFile context, int lineNumber) {
 				trace(key, key.getKeyName() + " -= " + value, lineNumber);
 			}
 			
 			private void trace(ConfigurationKey<?> key, String message, int lineNumber) {
-				if (!keys.contains(key)) return;
+				if (!keys.contains(key) && key != ConfigurationKeys.STOP_BUBBLING) return;
 				List<String> traces = result.get(key);
 				if (traces == null) {
 					traces = new ArrayList<String>();
@@ -316,8 +352,9 @@ public class ConfigurationApp extends LombokApp {
 				}
 				traces.add(String.format("%4d: %s", lineNumber, message));
 			}
+
 		};
-		new ConfigurationParser(VOID).parse(content, contentDescription, collector);
+		new ConfigurationParser(VOID).parse(context, collector);
 		return result;
 	}
 	

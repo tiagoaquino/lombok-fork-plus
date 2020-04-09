@@ -10,17 +10,20 @@ final @NoArgsConstructor(force = true) @AllArgsConstructor @Builder @Value class
     @java.lang.SuppressWarnings("all") ConstructorsWithBuilderDefaultsBuilder() {
       super();
     }
-    public @java.lang.SuppressWarnings("all") ConstructorsWithBuilderDefaultsBuilder x(final int x) {
+    public @java.lang.SuppressWarnings("all") ConstructorsWithBuilderDefaults.ConstructorsWithBuilderDefaultsBuilder x(final int x) {
       this.x$value = x;
       x$set = true;
       return this;
     }
-    public @java.lang.SuppressWarnings("all") ConstructorsWithBuilderDefaultsBuilder y(final int y) {
+    public @java.lang.SuppressWarnings("all") ConstructorsWithBuilderDefaults.ConstructorsWithBuilderDefaultsBuilder y(final int y) {
       this.y = y;
       return this;
     }
     public @java.lang.SuppressWarnings("all") ConstructorsWithBuilderDefaults build() {
-      return new ConstructorsWithBuilderDefaults((x$set ? x$value : ConstructorsWithBuilderDefaults.$default$x()), y);
+      int x$value = this.x$value;
+      if ((! this.x$set))
+          x$value = ConstructorsWithBuilderDefaults.$default$x();
+      return new ConstructorsWithBuilderDefaults(x$value, this.y);
     }
     public @java.lang.Override @java.lang.SuppressWarnings("all") java.lang.String toString() {
       return (((("ConstructorsWithBuilderDefaults.ConstructorsWithBuilderDefaultsBuilder(x$value=" + this.x$value) + ", y=") + this.y) + ")");
@@ -31,8 +34,8 @@ final @NoArgsConstructor(force = true) @AllArgsConstructor @Builder @Value class
   private static @java.lang.SuppressWarnings("all") int $default$x() {
     return 5;
   }
-  public static @java.lang.SuppressWarnings("all") ConstructorsWithBuilderDefaultsBuilder builder() {
-    return new ConstructorsWithBuilderDefaultsBuilder();
+  public static @java.lang.SuppressWarnings("all") ConstructorsWithBuilderDefaults.ConstructorsWithBuilderDefaultsBuilder builder() {
+    return new ConstructorsWithBuilderDefaults.ConstructorsWithBuilderDefaultsBuilder();
   }
   public @java.lang.SuppressWarnings("all") int getX() {
     return this.x;

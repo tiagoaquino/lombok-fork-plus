@@ -16,7 +16,7 @@ class BuilderWithNonNull {
 		BuilderWithNonNullBuilder() {
 		}
 		@java.lang.SuppressWarnings("all")
-		public BuilderWithNonNullBuilder id(@lombok.NonNull final String id) {
+		public BuilderWithNonNull.BuilderWithNonNullBuilder id(@lombok.NonNull final String id) {
 			if (id == null) {
 				throw new java.lang.NullPointerException("id is marked non-null but is null");
 			}
@@ -25,7 +25,7 @@ class BuilderWithNonNull {
 		}
 		@java.lang.SuppressWarnings("all")
 		public BuilderWithNonNull build() {
-			return new BuilderWithNonNull(id);
+			return new BuilderWithNonNull(this.id);
 		}
 		@java.lang.Override
 		@java.lang.SuppressWarnings("all")
@@ -34,7 +34,7 @@ class BuilderWithNonNull {
 		}
 	}
 	@java.lang.SuppressWarnings("all")
-	public static BuilderWithNonNullBuilder builder() {
-		return new BuilderWithNonNullBuilder();
+	public static BuilderWithNonNull.BuilderWithNonNullBuilder builder() {
+		return new BuilderWithNonNull.BuilderWithNonNullBuilder();
 	}
 }

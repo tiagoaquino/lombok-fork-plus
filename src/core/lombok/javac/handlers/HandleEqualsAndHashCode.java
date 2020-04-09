@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2019 The Project Lombok Authors.
+ * Copyright (C) 2009-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -381,6 +381,8 @@ public class HandleEqualsAndHashCode extends JavacAnnotationHandler<EqualsAndHas
 		Name otherName = typeNode.toName("other");
 		Name thisName = typeNode.toName("this");
 		
+		List<JCAnnotation> annsOnParamOnMethod = List.nil();
+		
 		JCAnnotation overrideAnnotation = maker.Annotation(genJavaLangTypeRef(typeNode, "Override"), List.<JCExpression>nil());
 		List<JCAnnotation> annsOnMethod = List.of(overrideAnnotation);
 		CheckerFrameworkVersion checkerFramework = getCheckerFrameworkVersion(typeNode);
@@ -388,13 +390,23 @@ public class HandleEqualsAndHashCode extends JavacAnnotationHandler<EqualsAndHas
 			annsOnMethod = annsOnMethod.prepend(maker.Annotation(genTypeRef(typeNode, CheckerFrameworkVersion.NAME__SIDE_EFFECT_FREE), List.<JCExpression>nil()));
 		}
 		JCModifiers mods = maker.Modifiers(Flags.PUBLIC, annsOnMethod);
-		JCExpression objectType = genJavaLangTypeRef(typeNode, "Object");
+		JCExpression objectType;
+		if (annsOnParamOnMethod.isEmpty()) {
+			objectType = genJavaLangTypeRef(typeNode, "Object");
+		} else {
+			objectType = chainDots(typeNode, "java", "lang", "Object");
+			objectType = maker.AnnotatedType(annsOnParamOnMethod, objectType);
+		}
+		
 		JCExpression returnType = maker.TypeIdent(CTC_BOOLEAN);
 		
 		long finalFlag = JavacHandlerUtil.addFinalIfNeeded(0L, typeNode.getContext());
 		
 		ListBuffer<JCStatement> statements = new ListBuffer<JCStatement>();
-		final List<JCVariableDecl> params = List.of(maker.VarDef(maker.Modifiers(finalFlag | Flags.PARAMETER, onParam), oName, objectType, null));
+		JCVariableDecl param = maker.VarDef(maker.Modifiers(finalFlag | Flags.PARAMETER, onParam), oName, objectType, null);
+		JavacHandlerUtil.createRelevantNullableAnnotation(typeNode, param);
+		
+		final List<JCVariableDecl> params = List.of(param);
 		
 		/* if (o == this) return true; */ {
 			statements.append(maker.If(maker.Binary(CTC_EQUAL, maker.Ident(oName),
@@ -517,7 +529,9 @@ public class HandleEqualsAndHashCode extends JavacAnnotationHandler<EqualsAndHas
 		JCExpression objectType = genJavaLangTypeRef(typeNode, "Object");
 		Name otherName = typeNode.toName("other");
 		long flags = JavacHandlerUtil.addFinalIfNeeded(Flags.PARAMETER, typeNode.getContext());
-		List<JCVariableDecl> params = List.of(maker.VarDef(maker.Modifiers(flags, onParam), otherName, objectType, null));
+		JCVariableDecl param = maker.VarDef(maker.Modifiers(flags, onParam), otherName, objectType, null);
+		createRelevantNullableAnnotation(typeNode, param);
+		List<JCVariableDecl> params = List.of(param);
 		
 		JCBlock body = maker.Block(0, List.<JCStatement>of(
 			maker.Return(maker.TypeTest(maker.Ident(otherName), createTypeReference(typeNode, false)))));

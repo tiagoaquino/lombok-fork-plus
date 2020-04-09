@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2019 The Project Lombok Authors.
+ * Copyright (C) 2016-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -31,6 +31,7 @@ import java.io.Writer;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -153,6 +154,7 @@ public class PrettyPrinter extends JCTree.Visitor {
 	private final Writer out;
 	private final JCCompilationUnit compilationUnit;
 	private List<CommentInfo> comments;
+	private final int[] textBlockStarts;
 	private final FormatPreferences formatPreferences;
 	
 	private final Map<JCTree, String> docComments;
@@ -160,9 +162,10 @@ public class PrettyPrinter extends JCTree.Visitor {
 	private int indent = 0;
 	
 	@SuppressWarnings({"unchecked", "rawtypes"})
-	public PrettyPrinter(Writer out, JCCompilationUnit cu, List<CommentInfo> comments, FormatPreferences preferences) {
+	public PrettyPrinter(Writer out, JCCompilationUnit cu, List<CommentInfo> comments, int[] textBlockStarts, FormatPreferences preferences) {
 		this.out = out;
 		this.comments = comments;
+		this.textBlockStarts = textBlockStarts;
 		this.compilationUnit = cu;
 		this.formatPreferences = preferences;
 		
@@ -488,6 +491,19 @@ public class PrettyPrinter extends JCTree.Visitor {
 	}
 	
 	@Override public void visitImport(JCImport tree) {
+		if (tree.qualid instanceof JCFieldAccess) {
+			JCFieldAccess fa = ((JCFieldAccess) tree.qualid);
+			if (fa.name.length() == 1 && fa.name.contentEquals("*")) {
+				if (fa.selected instanceof JCFieldAccess) {
+					JCFieldAccess lombokExperimental = (JCFieldAccess) fa.selected;
+					if (lombokExperimental.name.contentEquals("experimental") && lombokExperimental.selected instanceof JCIdent && ((JCIdent) lombokExperimental.selected).name.contentEquals("lombok")) {
+						// do not ever print lombok.experimental.*.
+						return;
+					}
+				}
+			}
+		}
+		
 		aPrint("import ");
 		if (tree.staticImport) print("static ");
 		print(tree.qualid);
@@ -727,7 +743,37 @@ public class PrettyPrinter extends JCTree.Visitor {
 		}
 		else if (CTC_BOOLEAN.equals(typeTag)) print(((Number)tree.value).intValue() == 1 ? "true" : "false");
 		else if (CTC_BOT.equals(typeTag)) print("null");
-		else print("\"" + quoteChars(tree.value.toString()) + "\"");
+		else {
+			if (Arrays.binarySearch(textBlockStarts, tree.pos) < 0) {
+				print("\"" + quoteChars(tree.value.toString()) + "\"");
+			} else {
+				printTextBlock(tree.value.toString());
+			}
+		}
+	}
+	
+	private void printTextBlock(String s) {
+		println("\"\"\"");
+		needsAlign = true;
+		indent++;
+		StringBuilder sb = new StringBuilder();
+		boolean lineStart = true;
+		for (int i = 0; i < s.length(); i++) {
+			char c = s.charAt(i);
+			if (c != ' ' && c != '\t') lineStart = false;
+			if (c == '\n') {
+				println(sb);
+				sb.setLength(0);
+				needsAlign = true;
+				lineStart = true;
+				continue;
+			}
+			if (c == '\t' && lineStart) sb.append("\t");
+			else sb.append(quoteChar(s.charAt(i)));
+		}
+		print(sb);
+		print("\"\"\"");
+		indent--;
 	}
 	
 	@Override public void visitMethodDef(JCMethodDecl tree) {
@@ -1025,7 +1071,11 @@ public class PrettyPrinter extends JCTree.Visitor {
 	@Override public void visitTypeTest(JCInstanceOf tree) {
 		print(tree.expr);
 		print(" instanceof ");
-		print(tree.clazz);
+		
+		/** With java14, instead of a type (field 'clazz'), there's now a pattern (field 'pattern', of type JCTree, which is either a JCPattern for new-style instanceof, or if not it's the same as what 'clazz' held) */
+		JCTree c = readObject(tree, "clazz", null); // JDK-13
+		if (c == null) c = readObject(tree, "pattern", null); // JDK14+
+		print(c);
 	}
 	
 	@Override public void visitTypeCast(JCTypeCast tree) {
@@ -1266,6 +1316,11 @@ public class PrettyPrinter extends JCTree.Visitor {
 				print(";");
 				needsNewLine = true;
 				needsAlign = true;
+			} else if (tree.stats.head.getClass().getSimpleName().equals("JCYield")) {
+				print((JCExpression) readObject(tree.stats.head, "value", null));
+				print(";");
+				needsNewLine = true;
+				needsAlign = true;
 			} else {
 				print(tree.stats.head);
 				if (tree.stats.head instanceof JCBlock) needsNewLine = false;
@@ -1295,7 +1350,10 @@ public class PrettyPrinter extends JCTree.Visitor {
 			print(")");
 		}
 		println(" {");
+		boolean ruleStyle = isCaseRuleStyle(tree.cases.head);
+		if (ruleStyle) indent++;
 		print(tree.cases, "");
+		if (ruleStyle) indent--;
 		aPrintln("}", tree);
 	}
 	
@@ -1311,8 +1369,24 @@ public class PrettyPrinter extends JCTree.Visitor {
 		}
 		println(" {");
 		List<JCCase> cases = readObject(tree, "cases", null);
+		boolean ruleStyle = isCaseRuleStyle(cases.head);
+		if (ruleStyle) indent++;
 		print(cases, "");
+		if (ruleStyle) indent--;
 		aPrint("}");
+	}
+	
+	void printYieldExpression(JCTree tree) {
+		aPrint("yield ");
+		JCExpression value = readObject(tree, "value", null);
+		print(value);
+		println(";", tree);
+	}
+	
+	void printBindingPattern(JCTree tree) {
+		print((JCExpression) readObject(tree, "vartype", null));
+		print(" ");
+		print((Name) readObject(tree, "name", null));
 	}
 	
 	@Override public void visitTry(JCTry tree) {
@@ -1535,9 +1609,19 @@ public class PrettyPrinter extends JCTree.Visitor {
 			// Starting with JDK9, this is inside the import list, but we've already printed it. Just ignore it.
 		} else if ("JCSwitchExpression".equals(simpleName)) { // Introduced as preview feature in JDK12
 			printSwitchExpression(tree);
+		} else if ("JCYield".equals(simpleName)) { // Introduced as preview feature in JDK13, part of switch expressions.
+			printYieldExpression(tree);
+		} else if ("JCBindingPattern".equals(simpleName)) { // Introduced as preview in JDK14
+			printBindingPattern(tree);
 		} else {
 			throw new AssertionError("Unhandled tree type: " + tree.getClass() + ": " + tree);
 		}
+	}
+	
+	private boolean isCaseRuleStyle(JCCase tree) {
+		if (tree == null) return false;
+		Enum<?> caseKind = readObject(tree, "caseKind", null); // JDK 12+
+		return caseKind != null && caseKind.name().equalsIgnoreCase("RULE");
 	}
 	
 	private boolean jcAnnotatedTypeInit = false;

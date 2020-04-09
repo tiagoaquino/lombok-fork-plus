@@ -10,22 +10,28 @@ public final @Value @Builder class BuilderDefaults {
     @java.lang.SuppressWarnings("all") BuilderDefaultsBuilder() {
       super();
     }
-    public @java.lang.SuppressWarnings("all") BuilderDefaultsBuilder x(final int x) {
+    public @java.lang.SuppressWarnings("all") BuilderDefaults.BuilderDefaultsBuilder x(final int x) {
       this.x$value = x;
       x$set = true;
       return this;
     }
-    public @java.lang.SuppressWarnings("all") BuilderDefaultsBuilder name(final String name) {
+    public @java.lang.SuppressWarnings("all") BuilderDefaults.BuilderDefaultsBuilder name(final String name) {
       this.name = name;
       return this;
     }
-    public @java.lang.SuppressWarnings("all") BuilderDefaultsBuilder z(final long z) {
+    public @java.lang.SuppressWarnings("all") BuilderDefaults.BuilderDefaultsBuilder z(final long z) {
       this.z$value = z;
       z$set = true;
       return this;
     }
     public @java.lang.SuppressWarnings("all") BuilderDefaults build() {
-      return new BuilderDefaults((x$set ? x$value : BuilderDefaults.$default$x()), name, (z$set ? z$value : BuilderDefaults.$default$z()));
+      int x$value = this.x$value;
+      if ((! this.x$set))
+          x$value = BuilderDefaults.$default$x();
+      long z$value = this.z$value;
+      if ((! this.z$set))
+          z$value = BuilderDefaults.$default$z();
+      return new BuilderDefaults(x$value, this.name, z$value);
     }
     public @java.lang.Override @java.lang.SuppressWarnings("all") java.lang.String toString() {
       return (((((("BuilderDefaults.BuilderDefaultsBuilder(x$value=" + this.x$value) + ", name=") + this.name) + ", z$value=") + this.z$value) + ")");
@@ -46,8 +52,8 @@ public final @Value @Builder class BuilderDefaults {
     this.name = name;
     this.z = z;
   }
-  public static @java.lang.SuppressWarnings("all") BuilderDefaultsBuilder builder() {
-    return new BuilderDefaultsBuilder();
+  public static @java.lang.SuppressWarnings("all") BuilderDefaults.BuilderDefaultsBuilder builder() {
+    return new BuilderDefaults.BuilderDefaultsBuilder();
   }
   public @java.lang.SuppressWarnings("all") int getX() {
     return this.x;

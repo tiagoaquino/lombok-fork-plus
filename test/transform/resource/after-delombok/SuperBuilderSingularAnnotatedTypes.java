@@ -10,7 +10,7 @@ class SuperBuilderSingularAnnotatedTypes {
 	private Set<@MyAnnotation @NonNull String> foos;
 	private Map<@MyAnnotation @NonNull String, @MyAnnotation @NonNull Integer> bars;
 	@java.lang.SuppressWarnings("all")
-	public static abstract class SuperBuilderSingularAnnotatedTypesBuilder<C extends SuperBuilderSingularAnnotatedTypes, B extends SuperBuilderSingularAnnotatedTypesBuilder<C, B>> {
+	public static abstract class SuperBuilderSingularAnnotatedTypesBuilder<C extends SuperBuilderSingularAnnotatedTypes, B extends SuperBuilderSingularAnnotatedTypes.SuperBuilderSingularAnnotatedTypesBuilder<C, B>> {
 		@java.lang.SuppressWarnings("all")
 		private java.util.ArrayList<@MyAnnotation @NonNull String> foos;
 		@java.lang.SuppressWarnings("all")
@@ -32,6 +32,9 @@ class SuperBuilderSingularAnnotatedTypes {
 		}
 		@java.lang.SuppressWarnings("all")
 		public B foos(final java.util.Collection<? extends @MyAnnotation @NonNull String> foos) {
+			if (foos == null) {
+				throw new java.lang.NullPointerException("foos cannot be null");
+			}
 			if (this.foos == null) this.foos = new java.util.ArrayList<@MyAnnotation @NonNull String>();
 			this.foos.addAll(foos);
 			return self();
@@ -59,6 +62,9 @@ class SuperBuilderSingularAnnotatedTypes {
 		}
 		@java.lang.SuppressWarnings("all")
 		public B bars(final java.util.Map<? extends @MyAnnotation @NonNull String, ? extends @MyAnnotation @NonNull Integer> bars) {
+			if (bars == null) {
+				throw new java.lang.NullPointerException("bars cannot be null");
+			}
 			if (this.bars$key == null) {
 				this.bars$key = new java.util.ArrayList<@MyAnnotation @NonNull String>();
 				this.bars$value = new java.util.ArrayList<@MyAnnotation @NonNull Integer>();
@@ -84,13 +90,13 @@ class SuperBuilderSingularAnnotatedTypes {
 		}
 	}
 	@java.lang.SuppressWarnings("all")
-	private static final class SuperBuilderSingularAnnotatedTypesBuilderImpl extends SuperBuilderSingularAnnotatedTypesBuilder<SuperBuilderSingularAnnotatedTypes, SuperBuilderSingularAnnotatedTypesBuilderImpl> {
+	private static final class SuperBuilderSingularAnnotatedTypesBuilderImpl extends SuperBuilderSingularAnnotatedTypes.SuperBuilderSingularAnnotatedTypesBuilder<SuperBuilderSingularAnnotatedTypes, SuperBuilderSingularAnnotatedTypes.SuperBuilderSingularAnnotatedTypesBuilderImpl> {
 		@java.lang.SuppressWarnings("all")
 		private SuperBuilderSingularAnnotatedTypesBuilderImpl() {
 		}
 		@java.lang.Override
 		@java.lang.SuppressWarnings("all")
-		protected SuperBuilderSingularAnnotatedTypesBuilderImpl self() {
+		protected SuperBuilderSingularAnnotatedTypes.SuperBuilderSingularAnnotatedTypesBuilderImpl self() {
 			return this;
 		}
 		@java.lang.Override
@@ -100,7 +106,7 @@ class SuperBuilderSingularAnnotatedTypes {
 		}
 	}
 	@java.lang.SuppressWarnings("all")
-	protected SuperBuilderSingularAnnotatedTypes(final SuperBuilderSingularAnnotatedTypesBuilder<?, ?> b) {
+	protected SuperBuilderSingularAnnotatedTypes(final SuperBuilderSingularAnnotatedTypes.SuperBuilderSingularAnnotatedTypesBuilder<?, ?> b) {
 		java.util.Set<@MyAnnotation @NonNull String> foos;
 		switch (b.foos == null ? 0 : b.foos.size()) {
 		case 0: 
@@ -131,7 +137,7 @@ class SuperBuilderSingularAnnotatedTypes {
 		this.bars = bars;
 	}
 	@java.lang.SuppressWarnings("all")
-	public static SuperBuilderSingularAnnotatedTypesBuilder<?, ?> builder() {
-		return new SuperBuilderSingularAnnotatedTypesBuilderImpl();
+	public static SuperBuilderSingularAnnotatedTypes.SuperBuilderSingularAnnotatedTypesBuilder<?, ?> builder() {
+		return new SuperBuilderSingularAnnotatedTypes.SuperBuilderSingularAnnotatedTypesBuilderImpl();
 	}
 }

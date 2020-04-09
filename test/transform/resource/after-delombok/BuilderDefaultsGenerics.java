@@ -39,19 +39,19 @@ public class BuilderDefaultsGenerics<N extends Number, T, R extends List<T>> {
 		BuilderDefaultsGenericsBuilder() {
 		}
 		@java.lang.SuppressWarnings("all")
-		public BuilderDefaultsGenericsBuilder<N, T, R> callable(final java.util.concurrent.Callable<N> callable) {
+		public BuilderDefaultsGenerics.BuilderDefaultsGenericsBuilder<N, T, R> callable(final java.util.concurrent.Callable<N> callable) {
 			this.callable$value = callable;
 			callable$set = true;
 			return this;
 		}
 		@java.lang.SuppressWarnings("all")
-		public BuilderDefaultsGenericsBuilder<N, T, R> tee(final T tee) {
+		public BuilderDefaultsGenerics.BuilderDefaultsGenericsBuilder<N, T, R> tee(final T tee) {
 			this.tee$value = tee;
 			tee$set = true;
 			return this;
 		}
 		@java.lang.SuppressWarnings("all")
-		public BuilderDefaultsGenericsBuilder<N, T, R> arrr(final R arrr) {
+		public BuilderDefaultsGenerics.BuilderDefaultsGenericsBuilder<N, T, R> arrr(final R arrr) {
 			this.arrr$value = arrr;
 			arrr$set = true;
 			return this;
@@ -59,11 +59,11 @@ public class BuilderDefaultsGenerics<N extends Number, T, R extends List<T>> {
 		@java.lang.SuppressWarnings("all")
 		public BuilderDefaultsGenerics<N, T, R> build() {
 			java.util.concurrent.Callable<N> callable$value = this.callable$value;
-			if (!callable$set) callable$value = BuilderDefaultsGenerics.<N, T, R>$default$callable();
+			if (!this.callable$set) callable$value = BuilderDefaultsGenerics.<N, T, R>$default$callable();
 			T tee$value = this.tee$value;
-			if (!tee$set) tee$value = BuilderDefaultsGenerics.<N, T, R>$default$tee();
+			if (!this.tee$set) tee$value = BuilderDefaultsGenerics.<N, T, R>$default$tee();
 			R arrr$value = this.arrr$value;
-			if (!arrr$set) arrr$value = BuilderDefaultsGenerics.<N, T, R>$default$arrr();
+			if (!this.arrr$set) arrr$value = BuilderDefaultsGenerics.<N, T, R>$default$arrr();
 			return new BuilderDefaultsGenerics<N, T, R>(callable$value, tee$value, arrr$value);
 		}
 		@java.lang.Override
@@ -73,7 +73,7 @@ public class BuilderDefaultsGenerics<N extends Number, T, R extends List<T>> {
 		}
 	}
 	@java.lang.SuppressWarnings("all")
-	public static <N extends Number, T, R extends List<T>> BuilderDefaultsGenericsBuilder<N, T, R> builder() {
-		return new BuilderDefaultsGenericsBuilder<N, T, R>();
+	public static <N extends Number, T, R extends List<T>> BuilderDefaultsGenerics.BuilderDefaultsGenericsBuilder<N, T, R> builder() {
+		return new BuilderDefaultsGenerics.BuilderDefaultsGenericsBuilder<N, T, R>();
 	}
 }

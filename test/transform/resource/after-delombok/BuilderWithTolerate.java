@@ -15,13 +15,13 @@ public class BuilderWithTolerate {
 		BuilderWithTolerateBuilder() {
 		}
 		@java.lang.SuppressWarnings("all")
-		public BuilderWithTolerateBuilder value(final int value) {
+		public BuilderWithTolerate.BuilderWithTolerateBuilder value(final int value) {
 			this.value = value;
 			return this;
 		}
 		@java.lang.SuppressWarnings("all")
 		public BuilderWithTolerate build() {
-			return new BuilderWithTolerate(value);
+			return new BuilderWithTolerate(this.value);
 		}
 		@java.lang.Override
 		@java.lang.SuppressWarnings("all")
@@ -34,7 +34,7 @@ public class BuilderWithTolerate {
 		this.value = value;
 	}
 	@java.lang.SuppressWarnings("all")
-	public static BuilderWithTolerateBuilder builder() {
-		return new BuilderWithTolerateBuilder();
+	public static BuilderWithTolerate.BuilderWithTolerateBuilder builder() {
+		return new BuilderWithTolerate.BuilderWithTolerateBuilder();
 	}
 }

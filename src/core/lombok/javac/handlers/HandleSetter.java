@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2019 The Project Lombok Authors.
+ * Copyright (C) 2009-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -248,7 +248,7 @@ public class HandleSetter extends JavacAnnotationHandler<Setter> {
 		if (!hasNonNullAnnotations(field) && !hasNonNullAnnotations(field, onParam)) {
 			statements.append(treeMaker.Exec(assign));
 		} else {
-			JCStatement nullCheck = generateNullCheck(treeMaker, fieldDecl.vartype, paramName, source);
+			JCStatement nullCheck = generateNullCheck(treeMaker, fieldDecl.vartype, paramName, source, null);
 			if (nullCheck != null) statements.append(nullCheck);
 			statements.append(treeMaker.Exec(assign));
 		}
@@ -277,9 +277,11 @@ public class HandleSetter extends JavacAnnotationHandler<Setter> {
 			annsOnMethod = annsOnMethod.prepend(treeMaker.Annotation(genJavaLangTypeRef(field, "Deprecated"), List.<JCExpression>nil()));
 		}
 		
-		JCMethodDecl decl = recursiveSetGeneratedBy(treeMaker.MethodDef(treeMaker.Modifiers(access, annsOnMethod), methodName, methodType,
-			methodGenericParams, parameters, throwsClauses, methodBody, annotationMethodDefaultValue), source.get(), field.getContext());
-		copyJavadoc(field, decl, CopyJavadoc.SETTER);
+		JCMethodDecl methodDef = treeMaker.MethodDef(treeMaker.Modifiers(access, annsOnMethod), methodName, methodType,
+			methodGenericParams, parameters, throwsClauses, methodBody, annotationMethodDefaultValue);
+		if (returnStatement != null) createRelevantNonNullAnnotation(source, methodDef);
+		JCMethodDecl decl = recursiveSetGeneratedBy(methodDef, source.get(), field.getContext());
+		copyJavadoc(field, decl, CopyJavadoc.SETTER, returnStatement != null);
 		return decl;
 	}
 }

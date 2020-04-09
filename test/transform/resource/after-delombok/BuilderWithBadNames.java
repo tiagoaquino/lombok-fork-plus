@@ -16,18 +16,18 @@ public class BuilderWithBadNames {
 		BuilderWithBadNamesBuilder() {
 		}
 		@java.lang.SuppressWarnings("all")
-		public BuilderWithBadNamesBuilder build(final String build) {
+		public BuilderWithBadNames.BuilderWithBadNamesBuilder build(final String build) {
 			this.build = build;
 			return this;
 		}
 		@java.lang.SuppressWarnings("all")
-		public BuilderWithBadNamesBuilder toString(final String toString) {
+		public BuilderWithBadNames.BuilderWithBadNamesBuilder toString(final String toString) {
 			this.toString = toString;
 			return this;
 		}
 		@java.lang.SuppressWarnings("all")
 		public BuilderWithBadNames build() {
-			return new BuilderWithBadNames(build, toString);
+			return new BuilderWithBadNames(this.build, this.toString);
 		}
 		@java.lang.Override
 		@java.lang.SuppressWarnings("all")
@@ -36,7 +36,7 @@ public class BuilderWithBadNames {
 		}
 	}
 	@java.lang.SuppressWarnings("all")
-	public static BuilderWithBadNamesBuilder builder() {
-		return new BuilderWithBadNamesBuilder();
+	public static BuilderWithBadNames.BuilderWithBadNamesBuilder builder() {
+		return new BuilderWithBadNames.BuilderWithBadNamesBuilder();
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2015 The Project Lombok Authors.
+ * Copyright (C) 2013-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -43,13 +43,18 @@ public class JavacImportList implements ImportList {
 	}
 	
 	@Override public String getFullyQualifiedNameForSimpleName(String unqualified) {
+		String q = getFullyQualifiedNameForSimpleNameNoAliasing(unqualified);
+		return q == null ? null : LombokInternalAliasing.processAliases(q);
+	}
+	
+	@Override public String getFullyQualifiedNameForSimpleNameNoAliasing(String unqualified) {
 		for (JCTree def : defs) {
 			if (!(def instanceof JCImport)) continue;
 			JCTree qual = ((JCImport) def).qualid;
 			if (!(qual instanceof JCFieldAccess)) continue;
 			String simpleName = ((JCFieldAccess) qual).name.toString();
 			if (simpleName.equals(unqualified)) {
-				return LombokInternalAliasing.processAliases(qual.toString());
+				return qual.toString();
 			}
 		}
 		
@@ -60,11 +65,6 @@ public class JavacImportList implements ImportList {
 		if (pkgStr != null && pkgStr.equals(packageName)) return true;
 		if ("java.lang".equals(packageName)) return true;
 		
-		if (pkgStr != null) {
-			Collection<String> extra = LombokInternalAliasing.IMPLIED_EXTRA_STAR_IMPORTS.get(pkgStr);
-			if (extra != null && extra.contains(packageName)) return true;
-		}
-		
 		for (JCTree def : defs) {
 			if (!(def instanceof JCImport)) continue;
 			if (((JCImport) def).staticImport) continue;
@@ -74,8 +74,6 @@ public class JavacImportList implements ImportList {
 			if (!"*".equals(simpleName)) continue;
 			String starImport = ((JCFieldAccess) qual).selected.toString();
 			if (packageName.equals(starImport)) return true;
-			Collection<String> extra = LombokInternalAliasing.IMPLIED_EXTRA_STAR_IMPORTS.get(starImport);
-			if (extra != null && extra.contains(packageName)) return true;
 		}
 		
 		return false;

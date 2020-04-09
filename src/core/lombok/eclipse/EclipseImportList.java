@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 The Project Lombok Authors.
+ * Copyright (C) 2013-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,7 +27,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 import lombok.core.ImportList;
 import lombok.core.LombokInternalAliasing;
@@ -46,6 +45,11 @@ public class EclipseImportList implements ImportList {
 	}
 	
 	@Override public String getFullyQualifiedNameForSimpleName(String unqualified) {
+		String q = getFullyQualifiedNameForSimpleNameNoAliasing(unqualified);
+		return q == null ? null : LombokInternalAliasing.processAliases(q);
+	}
+	
+	@Override public String getFullyQualifiedNameForSimpleNameNoAliasing(String unqualified) {
 		if (imports != null) {
 			outer:
 			for (ImportReference imp : imports) {
@@ -55,7 +59,7 @@ public class EclipseImportList implements ImportList {
 				int len = token.length;
 				if (len != unqualified.length()) continue;
 				for (int i = 0; i < len; i++) if (token[i] != unqualified.charAt(i)) continue outer;
-				return LombokInternalAliasing.processAliases(toQualifiedName(tokens));
+				return toQualifiedName(tokens);
 			}
 		}
 		return null;
@@ -65,19 +69,10 @@ public class EclipseImportList implements ImportList {
 		if (isEqual(packageName, pkg)) return true;
 		if ("java.lang".equals(packageName)) return true;
 		
-		if (pkg != null && pkg.tokens != null && pkg.tokens.length == 0) {
-			for (Map.Entry<String, Collection<String>> e : LombokInternalAliasing.IMPLIED_EXTRA_STAR_IMPORTS.entrySet()) {
-				if (isEqual(e.getKey(), pkg) && e.getValue().contains(packageName)) return true;
-			}
-		}
-		
 		if (imports != null) for (ImportReference imp : imports) {
 			if ((imp.bits & ASTNode.OnDemand) == 0) continue;
 			if (imp.isStatic()) continue;
 			if (isEqual(packageName, imp)) return true;
-			for (Map.Entry<String, Collection<String>> e : LombokInternalAliasing.IMPLIED_EXTRA_STAR_IMPORTS.entrySet()) {
-				if (isEqual(e.getKey(), imp) && e.getValue().contains(packageName)) return true;
-			}
 			
 		}
 		return false;

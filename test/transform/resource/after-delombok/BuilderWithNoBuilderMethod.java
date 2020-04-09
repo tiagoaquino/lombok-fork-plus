@@ -12,13 +12,13 @@ class BuilderWithNoBuilderMethod {
 		BuilderWithNoBuilderMethodBuilder() {
 		}
 		@java.lang.SuppressWarnings("all")
-		public BuilderWithNoBuilderMethodBuilder a(final String a) {
+		public BuilderWithNoBuilderMethod.BuilderWithNoBuilderMethodBuilder a(final String a) {
 			this.a = a;
 			return this;
 		}
 		@java.lang.SuppressWarnings("all")
 		public BuilderWithNoBuilderMethod build() {
-			return new BuilderWithNoBuilderMethod(a);
+			return new BuilderWithNoBuilderMethod(this.a);
 		}
 		@java.lang.Override
 		@java.lang.SuppressWarnings("all")
@@ -27,7 +27,7 @@ class BuilderWithNoBuilderMethod {
 		}
 	}
 	@java.lang.SuppressWarnings("all")
-	public BuilderWithNoBuilderMethodBuilder toBuilder() {
-		return new BuilderWithNoBuilderMethodBuilder().a(this.a);
+	public BuilderWithNoBuilderMethod.BuilderWithNoBuilderMethodBuilder toBuilder() {
+		return new BuilderWithNoBuilderMethod.BuilderWithNoBuilderMethodBuilder().a(this.a);
 	}
 }

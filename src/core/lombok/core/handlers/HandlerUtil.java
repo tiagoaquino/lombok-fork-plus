@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2018 The Project Lombok Authors.
+ * Copyright (C) 2013-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -79,7 +79,7 @@ public class HandlerUtil {
 	public static final List<String> NONNULL_ANNOTATIONS, BASE_COPYABLE_ANNOTATIONS, COPY_TO_SETTER_ANNOTATIONS;
 	static {
 		NONNULL_ANNOTATIONS = Collections.unmodifiableList(Arrays.asList(new String[] {
-			"android.annotation.NonNull",
+			"androidx.annotation.NonNull",
 			"android.support.annotation.NonNull",
 			"com.sun.istack.internal.NotNull",
 			"edu.umd.cs.findbugs.annotations.NonNull",
@@ -95,6 +95,8 @@ public class HandlerUtil {
 			"org.springframework.lang.NonNull",
 		}));
 		BASE_COPYABLE_ANNOTATIONS = Collections.unmodifiableList(Arrays.asList(new String[] {
+			"androidx.annotation.NonNull",
+			"androidx.annotation.Nullable",
 			"android.support.annotation.NonNull",
 			"android.support.annotation.Nullable",
 			"edu.umd.cs.findbugs.annotations.NonNull",
@@ -104,8 +106,11 @@ public class HandlerUtil {
 			"javax.annotation.Nonnull",
 			"javax.annotation.Nullable",
 			"lombok.NonNull",
+			"org.jmlspecs.annotation.NonNull",
+			"org.jmlspecs.annotation.Nullable",
 			// To update Checker Framework annotations, run:
 			// grep --recursive --files-with-matches -e '^@Target\b.*TYPE_USE' $CHECKERFRAMEWORK/checker/src/main/java  $CHECKERFRAMEWORK/framework/src/main/java | grep '\.java$' | sed 's/.*\/java\//\t\t\t"/' | sed 's/\.java$/",/' | sed 's/\//./g' | sort
+			// Only add new annotations, do not remove annotations that have been removed from the lastest version of the Checker Framework.
 			"org.checkerframework.checker.compilermsgs.qual.CompilerMessageKey",
 			"org.checkerframework.checker.compilermsgs.qual.CompilerMessageKeyBottom",
 			"org.checkerframework.checker.compilermsgs.qual.UnknownCompilerMessageKey",
@@ -215,6 +220,7 @@ public class HandlerUtil {
 			"org.checkerframework.checker.signature.qual.FieldDescriptor",
 			"org.checkerframework.checker.signature.qual.FieldDescriptorForPrimitive",
 			"org.checkerframework.checker.signature.qual.FieldDescriptorForPrimitiveOrArrayInUnnamedPackage",
+			"org.checkerframework.checker.signature.qual.FqBinaryName",
 			"org.checkerframework.checker.signature.qual.FullyQualifiedName",
 			"org.checkerframework.checker.signature.qual.Identifier",
 			"org.checkerframework.checker.signature.qual.IdentifierOrArray",
@@ -224,8 +230,11 @@ public class HandlerUtil {
 			"org.checkerframework.checker.signature.qual.SignatureBottom",
 			"org.checkerframework.checker.signedness.qual.Constant",
 			"org.checkerframework.checker.signedness.qual.PolySignedness",
+			"org.checkerframework.checker.signedness.qual.PolySigned",
 			"org.checkerframework.checker.signedness.qual.Signed",
 			"org.checkerframework.checker.signedness.qual.SignednessBottom",
+			"org.checkerframework.checker.signedness.qual.SignednessGlb",
+			"org.checkerframework.checker.signedness.qual.SignedPositive",
 			"org.checkerframework.checker.signedness.qual.UnknownSignedness",
 			"org.checkerframework.checker.signedness.qual.Unsigned",
 			"org.checkerframework.checker.tainting.qual.PolyTainted",
@@ -299,11 +308,13 @@ public class HandlerUtil {
 			"org.jetbrains.annotations.Nullable",
 			"org.springframework.lang.NonNull",
 			"org.springframework.lang.Nullable",
+			"org.netbeans.api.annotations.common.NonNull",
+			"org.netbeans.api.annotations.common.NullAllowed",
 		}));
 		COPY_TO_SETTER_ANNOTATIONS = Collections.unmodifiableList(Arrays.asList(new String[] {
-				"com.fasterxml.jackson.annotation.JsonProperty",
-				"com.fasterxml.jackson.annotation.JsonSetter",
-			}));
+			"com.fasterxml.jackson.annotation.JsonProperty",
+			"com.fasterxml.jackson.annotation.JsonSetter",
+		}));
 	}
 	
 	/** Checks if the given name is a valid identifier.
@@ -445,11 +456,6 @@ public class HandlerUtil {
 		
 		return null;
 	}
-	
-	/* NB: 'notnull' is not part of the pattern because there are lots of @NotNull annotations out there that are crappily named and actually mean
-	        something else, such as 'this field must not be null _when saved to the db_ but its perfectly okay to start out as such, and a no-args
-	        constructor and the implied starts-out-as-null state that goes with it is in fact mandatory' which happens with javax.validation.constraints.NotNull.
-	        Various problems with spring have also been reported. See issue #287, issue #271, and issue #43. */
 	
 	public static final String DEFAULT_EXCEPTION_FOR_NON_NULL = "java.lang.NullPointerException";
 	

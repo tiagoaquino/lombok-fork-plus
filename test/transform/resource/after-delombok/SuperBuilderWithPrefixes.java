@@ -3,7 +3,7 @@ class SuperBuilderWithPrefixes {
 	int xOtherField;
 	java.util.List<String> mItems;
 	@java.lang.SuppressWarnings("all")
-	public static abstract class SuperBuilderWithPrefixesBuilder<C extends SuperBuilderWithPrefixes, B extends SuperBuilderWithPrefixesBuilder<C, B>> {
+	public static abstract class SuperBuilderWithPrefixesBuilder<C extends SuperBuilderWithPrefixes, B extends SuperBuilderWithPrefixes.SuperBuilderWithPrefixesBuilder<C, B>> {
 		@java.lang.SuppressWarnings("all")
 		private int field;
 		@java.lang.SuppressWarnings("all")
@@ -32,6 +32,9 @@ class SuperBuilderWithPrefixes {
 		}
 		@java.lang.SuppressWarnings("all")
 		public B items(final java.util.Collection<? extends String> items) {
+			if (items == null) {
+				throw new java.lang.NullPointerException("items cannot be null");
+			}
 			if (this.items == null) this.items = new java.util.ArrayList<String>();
 			this.items.addAll(items);
 			return self();
@@ -48,13 +51,13 @@ class SuperBuilderWithPrefixes {
 		}
 	}
 	@java.lang.SuppressWarnings("all")
-	private static final class SuperBuilderWithPrefixesBuilderImpl extends SuperBuilderWithPrefixesBuilder<SuperBuilderWithPrefixes, SuperBuilderWithPrefixesBuilderImpl> {
+	private static final class SuperBuilderWithPrefixesBuilderImpl extends SuperBuilderWithPrefixes.SuperBuilderWithPrefixesBuilder<SuperBuilderWithPrefixes, SuperBuilderWithPrefixes.SuperBuilderWithPrefixesBuilderImpl> {
 		@java.lang.SuppressWarnings("all")
 		private SuperBuilderWithPrefixesBuilderImpl() {
 		}
 		@java.lang.Override
 		@java.lang.SuppressWarnings("all")
-		protected SuperBuilderWithPrefixesBuilderImpl self() {
+		protected SuperBuilderWithPrefixes.SuperBuilderWithPrefixesBuilderImpl self() {
 			return this;
 		}
 		@java.lang.Override
@@ -64,7 +67,7 @@ class SuperBuilderWithPrefixes {
 		}
 	}
 	@java.lang.SuppressWarnings("all")
-	protected SuperBuilderWithPrefixes(final SuperBuilderWithPrefixesBuilder<?, ?> b) {
+	protected SuperBuilderWithPrefixes(final SuperBuilderWithPrefixes.SuperBuilderWithPrefixesBuilder<?, ?> b) {
 		this.mField = b.field;
 		this.xOtherField = b.otherField;
 		java.util.List<String> items;
@@ -81,7 +84,7 @@ class SuperBuilderWithPrefixes {
 		this.mItems = items;
 	}
 	@java.lang.SuppressWarnings("all")
-	public static SuperBuilderWithPrefixesBuilder<?, ?> builder() {
-		return new SuperBuilderWithPrefixesBuilderImpl();
+	public static SuperBuilderWithPrefixes.SuperBuilderWithPrefixesBuilder<?, ?> builder() {
+		return new SuperBuilderWithPrefixes.SuperBuilderWithPrefixesBuilderImpl();
 	}
 }

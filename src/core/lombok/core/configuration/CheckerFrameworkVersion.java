@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 The Project Lombok Authors.
+ * Copyright (C) 2019-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -82,5 +82,14 @@ public final class CheckerFrameworkVersion implements ConfigurationValueType {
 	public static String exampleValue() {
 		String s = (MAX_SUPPORTED / 1000) + "." + (MAX_SUPPORTED % 1000);
 		return "major.minor (example: 2.9 - and no higher than " + s + ") or true or false";
+	}
+	
+	@Override public boolean equals(Object obj) {
+		if (!(obj instanceof CheckerFrameworkVersion)) return false;
+		return version == ((CheckerFrameworkVersion) obj).version;
+	}
+	
+	@Override public int hashCode() {
+		return version;
 	}
 }

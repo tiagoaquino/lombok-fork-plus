@@ -32,18 +32,18 @@ public final class BuilderDefaults {
 		BuilderDefaultsBuilder() {
 		}
 		@java.lang.SuppressWarnings("all")
-		public BuilderDefaultsBuilder x(final int x) {
+		public BuilderDefaults.BuilderDefaultsBuilder x(final int x) {
 			this.x$value = x;
 			x$set = true;
 			return this;
 		}
 		@java.lang.SuppressWarnings("all")
-		public BuilderDefaultsBuilder name(final String name) {
+		public BuilderDefaults.BuilderDefaultsBuilder name(final String name) {
 			this.name = name;
 			return this;
 		}
 		@java.lang.SuppressWarnings("all")
-		public BuilderDefaultsBuilder z(final long z) {
+		public BuilderDefaults.BuilderDefaultsBuilder z(final long z) {
 			this.z$value = z;
 			z$set = true;
 			return this;
@@ -51,10 +51,10 @@ public final class BuilderDefaults {
 		@java.lang.SuppressWarnings("all")
 		public BuilderDefaults build() {
 			int x$value = this.x$value;
-			if (!x$set) x$value = BuilderDefaults.$default$x();
+			if (!this.x$set) x$value = BuilderDefaults.$default$x();
 			long z$value = this.z$value;
-			if (!z$set) z$value = BuilderDefaults.$default$z();
-			return new BuilderDefaults(x$value, name, z$value);
+			if (!this.z$set) z$value = BuilderDefaults.$default$z();
+			return new BuilderDefaults(x$value, this.name, z$value);
 		}
 		@java.lang.Override
 		@java.lang.SuppressWarnings("all")
@@ -63,8 +63,8 @@ public final class BuilderDefaults {
 		}
 	}
 	@java.lang.SuppressWarnings("all")
-	public static BuilderDefaultsBuilder builder() {
-		return new BuilderDefaultsBuilder();
+	public static BuilderDefaults.BuilderDefaultsBuilder builder() {
+		return new BuilderDefaults.BuilderDefaultsBuilder();
 	}
 	@java.lang.SuppressWarnings("all")
 	public int getX() {

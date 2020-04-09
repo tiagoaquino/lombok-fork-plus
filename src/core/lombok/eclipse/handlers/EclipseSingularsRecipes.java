@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2019 The Project Lombok Authors.
+ * Copyright (C) 2015-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -34,11 +34,14 @@ import java.util.Map;
 import org.eclipse.jdt.internal.compiler.ast.ASTNode;
 import org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.Annotation;
+import org.eclipse.jdt.internal.compiler.ast.Argument;
+import org.eclipse.jdt.internal.compiler.ast.Block;
 import org.eclipse.jdt.internal.compiler.ast.ConditionalExpression;
 import org.eclipse.jdt.internal.compiler.ast.EqualExpression;
 import org.eclipse.jdt.internal.compiler.ast.Expression;
 import org.eclipse.jdt.internal.compiler.ast.FieldDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.FieldReference;
+import org.eclipse.jdt.internal.compiler.ast.IfStatement;
 import org.eclipse.jdt.internal.compiler.ast.IntLiteral;
 import org.eclipse.jdt.internal.compiler.ast.MessageSend;
 import org.eclipse.jdt.internal.compiler.ast.NullLiteral;
@@ -109,7 +112,9 @@ public class EclipseSingularsRecipes {
 	}
 	
 	public String toQualified(String typeReference) {
-		return singularizableTypes.toQualified(typeReference);
+		List<String> q = singularizableTypes.toQualifieds(typeReference);
+		if (q.isEmpty()) return null;
+		return q.get(0);
 	}
 	
 	public EclipseSingularizer getSingularizer(String fqn) {
@@ -120,12 +125,18 @@ public class EclipseSingularsRecipes {
 		private final EclipseNode annotation;
 		private final char[] singularName;
 		private final char[] pluralName;
+		private final char[] setterPrefix;
 		private final List<TypeReference> typeArgs;
 		private final String targetFqn;
 		private final EclipseSingularizer singularizer;
+		private final boolean ignoreNullCollections;
 		private final ASTNode source;
 		
-		public SingularData(EclipseNode annotation, char[] singularName, char[] pluralName, List<TypeReference> typeArgs, String targetFqn, EclipseSingularizer singularizer, ASTNode source) {
+		public SingularData(EclipseNode annotation, char[] singularName, char[] pluralName, List<TypeReference> typeArgs, String targetFqn, EclipseSingularizer singularizer, ASTNode source, boolean ignoreNullCollections) {
+			this(annotation, singularName, pluralName, typeArgs, targetFqn, singularizer, source, ignoreNullCollections, new char[0]);
+		}
+		
+		public SingularData(EclipseNode annotation, char[] singularName, char[] pluralName, List<TypeReference> typeArgs, String targetFqn, EclipseSingularizer singularizer, ASTNode source, boolean ignoreNullCollections, char[] setterPrefix) {
 			this.annotation = annotation;
 			this.singularName = singularName;
 			this.pluralName = pluralName;
@@ -133,6 +144,8 @@ public class EclipseSingularsRecipes {
 			this.targetFqn = targetFqn;
 			this.singularizer = singularizer;
 			this.source = source;
+			this.ignoreNullCollections = ignoreNullCollections;
+			this.setterPrefix = setterPrefix;
 		}
 		
 		public void setGeneratedByRecursive(ASTNode target) {
@@ -163,6 +176,10 @@ public class EclipseSingularsRecipes {
 			return pluralName;
 		}
 		
+		public char[] getSetterPrefix() {
+			return setterPrefix;
+		}
+		
 		public List<TypeReference> getTypeArgs() {
 			return typeArgs;
 		}
@@ -173,6 +190,10 @@ public class EclipseSingularsRecipes {
 		
 		public EclipseSingularizer getSingularizer() {
 			return singularizer;
+		}
+		
+		public boolean isIgnoreNullCollections() {
+			return ignoreNullCollections;
 		}
 		
 		public String getTargetSimpleType() {
@@ -260,6 +281,10 @@ public class EclipseSingularsRecipes {
 		public abstract void generateMethods(CheckerFrameworkVersion cfv, SingularData data, boolean deprecate, EclipseNode builderType, boolean fluent, TypeReferenceMaker returnTypeMaker, StatementMaker returnStatementMaker, AccessLevel access);
 		
 		public abstract void appendBuildCode(SingularData data, EclipseNode builderType, List<Statement> statements, char[] targetVariableName, String builderVariable);
+		
+		public boolean shadowedDuringBuild() {
+			return true;
+		}
 		
 		public boolean requiresCleaning() {
 			try {
@@ -405,6 +430,24 @@ public class EclipseSingularsRecipes {
 			} else {
 				return new SingleNameReference(builderVariable.toCharArray(), 0);
 			}
+		}
+		
+		protected void nullBehaviorize(EclipseNode typeNode, SingularData data, List<Statement> statements, Argument arg) {
+			boolean ignoreNullCollections = data.isIgnoreNullCollections();
+			
+			if (ignoreNullCollections) {
+				Expression isNotNull = new EqualExpression(new SingleNameReference(data.getPluralName(), 0L), new NullLiteral(0, 0), OperatorIds.NOT_EQUAL);
+				Block b = new Block(0);
+				b.statements = statements.toArray(new Statement[statements.size()]);
+				statements.clear();
+				statements.add(new IfStatement(isNotNull, b, 0, 0));
+				EclipseHandlerUtil.createRelevantNullableAnnotation(typeNode, arg);
+				return;
+			}
+			
+			EclipseHandlerUtil.createRelevantNonNullAnnotation(typeNode, arg);
+			Statement nullCheck = EclipseHandlerUtil.generateNullCheck(null, data.getPluralName(), typeNode, "%s cannot be null");
+			statements.add(0, nullCheck);
 		}
 		
 		protected abstract char[][] getEmptyMakerReceiver(String targetFqn);

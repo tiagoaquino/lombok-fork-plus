@@ -11,22 +11,28 @@ final @Builder @Value class ConstructorsWithBuilderDefaults<T> {
     @java.lang.SuppressWarnings("all") ConstructorsWithBuilderDefaultsBuilder() {
       super();
     }
-    public @java.lang.SuppressWarnings("all") ConstructorsWithBuilderDefaultsBuilder<T> z(final java.util.List<T> z) {
+    public @java.lang.SuppressWarnings("all") ConstructorsWithBuilderDefaults.ConstructorsWithBuilderDefaultsBuilder<T> z(final java.util.List<T> z) {
       this.z$value = z;
       z$set = true;
       return this;
     }
-    public @java.lang.SuppressWarnings("all") ConstructorsWithBuilderDefaultsBuilder<T> x(final T x) {
+    public @java.lang.SuppressWarnings("all") ConstructorsWithBuilderDefaults.ConstructorsWithBuilderDefaultsBuilder<T> x(final T x) {
       this.x$value = x;
       x$set = true;
       return this;
     }
-    public @java.lang.SuppressWarnings("all") ConstructorsWithBuilderDefaultsBuilder<T> q(final T q) {
+    public @java.lang.SuppressWarnings("all") ConstructorsWithBuilderDefaults.ConstructorsWithBuilderDefaultsBuilder<T> q(final T q) {
       this.q = q;
       return this;
     }
     public @java.lang.SuppressWarnings("all") ConstructorsWithBuilderDefaults<T> build() {
-      return new ConstructorsWithBuilderDefaults<T>((z$set ? z$value : ConstructorsWithBuilderDefaults.<T>$default$z()), (x$set ? x$value : ConstructorsWithBuilderDefaults.<T>$default$x()), q);
+      java.util.List<T> z$value = this.z$value;
+      if ((! this.z$set))
+          z$value = ConstructorsWithBuilderDefaults.<T>$default$z();
+      T x$value = this.x$value;
+      if ((! this.x$set))
+          x$value = ConstructorsWithBuilderDefaults.<T>$default$x();
+      return new ConstructorsWithBuilderDefaults<T>(z$value, x$value, this.q);
     }
     public @java.lang.Override @java.lang.SuppressWarnings("all") java.lang.String toString() {
       return (((((("ConstructorsWithBuilderDefaults.ConstructorsWithBuilderDefaultsBuilder(z$value=" + this.z$value) + ", x$value=") + this.x$value) + ", q=") + this.q) + ")");
@@ -47,8 +53,8 @@ final @Builder @Value class ConstructorsWithBuilderDefaults<T> {
     this.x = x;
     this.q = q;
   }
-  public static @java.lang.SuppressWarnings("all") <T>ConstructorsWithBuilderDefaultsBuilder<T> builder() {
-    return new ConstructorsWithBuilderDefaultsBuilder<T>();
+  public static @java.lang.SuppressWarnings("all") <T>ConstructorsWithBuilderDefaults.ConstructorsWithBuilderDefaultsBuilder<T> builder() {
+    return new ConstructorsWithBuilderDefaults.ConstructorsWithBuilderDefaultsBuilder<T>();
   }
   public @java.lang.SuppressWarnings("all") java.util.List<T> getZ() {
     return this.z;

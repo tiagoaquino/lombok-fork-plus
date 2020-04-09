@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 The Project Lombok Authors.
+ * Copyright (C) 2014-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,19 +21,26 @@
  */
 package lombok.core.configuration;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
 
+import lombok.ConfigurationKeys;
 import lombok.core.configuration.ConfigurationSource.ListModification;
 import lombok.core.configuration.ConfigurationSource.Result;
 
 public class BubblingConfigurationResolver implements ConfigurationResolver {
 	
-	private final Iterable<ConfigurationSource> sources;
+	private final ConfigurationFile start;
+	private final ConfigurationFileToSource fileMapper;
 	
-	public BubblingConfigurationResolver(Iterable<ConfigurationSource> sources) {
-		this.sources = sources;
+	public BubblingConfigurationResolver(ConfigurationFile start, ConfigurationFileToSource fileMapper) {
+		this.start = start;
+		this.fileMapper = fileMapper;
 	}
 	
 	@SuppressWarnings("unchecked")
@@ -41,18 +48,43 @@ public class BubblingConfigurationResolver implements ConfigurationResolver {
 	public <T> T resolve(ConfigurationKey<T> key) {
 		boolean isList = key.getType().isList();
 		List<List<ListModification>> listModificationsList = null;
-		for (ConfigurationSource source : sources) {
-			Result result = source.resolve(key);
-			if (result == null) continue;
-			if (isList) {
-				if (listModificationsList == null) listModificationsList = new ArrayList<List<ListModification>>();
-				listModificationsList.add((List<ListModification>)result.getValue());
+
+		boolean stopBubbling = false;
+		ConfigurationFile currentLevel = start;
+		Collection<ConfigurationFile> visited = new HashSet<ConfigurationFile>();
+		outer:
+		while (!stopBubbling && currentLevel != null) {
+			Deque<ConfigurationFile> round = new ArrayDeque<ConfigurationFile>();
+			round.push(currentLevel);
+			
+			while (!round.isEmpty()) {
+				ConfigurationFile currentFile = round.pop();
+				if (currentFile == null || !visited.add(currentFile)) continue;
+				
+				ConfigurationSource source = fileMapper.parsed(currentFile);
+				if (source == null) continue;
+				
+				for (ConfigurationFile importFile : source.imports()) round.push(importFile);
+				
+				Result stop = source.resolve(ConfigurationKeys.STOP_BUBBLING);
+				stopBubbling = stopBubbling || (stop != null && Boolean.TRUE.equals(stop.getValue()));
+				
+				Result result = source.resolve(key);
+				if (result == null) {
+					continue;
+				}
+				if (isList) {
+					if (listModificationsList == null) listModificationsList = new ArrayList<List<ListModification>>();
+					listModificationsList.add((List<ListModification>)result.getValue());
+				}
+				if (result.isAuthoritative()) {
+					if (isList) break outer;
+					return (T) result.getValue();
+				}
 			}
-			if (result.isAuthoritative()) {
-				if (isList) break;
-				return (T) result.getValue();
-			}
+			currentLevel = currentLevel.parent();
 		}
+		
 		if (!isList) return null;
 		if (listModificationsList == null) return (T) Collections.emptyList();
 		

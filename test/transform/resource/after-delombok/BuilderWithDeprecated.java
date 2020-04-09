@@ -32,56 +32,63 @@ public class BuilderWithDeprecated {
 		}
 		/**
 		 * @deprecated since always
+		 * @return {@code this}.
 		 */
 		@java.lang.Deprecated
 		@java.lang.SuppressWarnings("all")
-		public BuilderWithDeprecatedBuilder dep1(final String dep1) {
+		public BuilderWithDeprecated.BuilderWithDeprecatedBuilder dep1(final String dep1) {
 			this.dep1 = dep1;
 			return this;
 		}
 		@java.lang.Deprecated
 		@java.lang.SuppressWarnings("all")
-		public BuilderWithDeprecatedBuilder dep2(final int dep2) {
+		public BuilderWithDeprecated.BuilderWithDeprecatedBuilder dep2(final int dep2) {
 			this.dep2 = dep2;
 			return this;
 		}
 		@java.lang.Deprecated
 		@java.lang.SuppressWarnings("all")
-		public BuilderWithDeprecatedBuilder string(final String string) {
+		public BuilderWithDeprecated.BuilderWithDeprecatedBuilder string(final String string) {
 			if (this.strings == null) this.strings = new java.util.ArrayList<String>();
 			this.strings.add(string);
 			return this;
 		}
 		@java.lang.Deprecated
 		@java.lang.SuppressWarnings("all")
-		public BuilderWithDeprecatedBuilder strings(final java.util.Collection<? extends String> strings) {
+		public BuilderWithDeprecated.BuilderWithDeprecatedBuilder strings(final java.util.Collection<? extends String> strings) {
+			if (strings == null) {
+				throw new java.lang.NullPointerException("strings cannot be null");
+			}
 			if (this.strings == null) this.strings = new java.util.ArrayList<String>();
 			this.strings.addAll(strings);
 			return this;
 		}
 		@java.lang.Deprecated
 		@java.lang.SuppressWarnings("all")
-		public BuilderWithDeprecatedBuilder clearStrings() {
+		public BuilderWithDeprecated.BuilderWithDeprecatedBuilder clearStrings() {
 			if (this.strings != null) this.strings.clear();
 			return this;
 		}
 		@java.lang.Deprecated
 		@java.lang.SuppressWarnings("all")
-		public BuilderWithDeprecatedBuilder number(final Integer number) {
+		public BuilderWithDeprecated.BuilderWithDeprecatedBuilder number(final Integer number) {
 			if (this.numbers == null) this.numbers = com.google.common.collect.ImmutableList.builder();
 			this.numbers.add(number);
 			return this;
 		}
 		@java.lang.Deprecated
 		@java.lang.SuppressWarnings("all")
-		public BuilderWithDeprecatedBuilder numbers(final java.lang.Iterable<? extends Integer> numbers) {
+		public BuilderWithDeprecated.BuilderWithDeprecatedBuilder numbers(final java.lang.Iterable<? extends Integer> numbers) {
+			if (numbers == null) {
+				throw new java.lang.NullPointerException("numbers cannot be null");
+			}
 			if (this.numbers == null) this.numbers = com.google.common.collect.ImmutableList.builder();
 			this.numbers.addAll(numbers);
 			return this;
 		}
 		@java.lang.Deprecated
 		@java.lang.SuppressWarnings("all")
-		public BuilderWithDeprecatedBuilder clearNumbers() {
+		public BuilderWithDeprecated.BuilderWithDeprecatedBuilder clearNumbers() {
 			this.numbers = null;
 			return this;
 		}
@@ -99,7 +106,7 @@ public class BuilderWithDeprecated {
 				strings = java.util.Collections.unmodifiableList(new java.util.ArrayList<String>(this.strings));
 			}
 			com.google.common.collect.ImmutableList<Integer> numbers = this.numbers == null ? com.google.common.collect.ImmutableList.<Integer>of() : this.numbers.build();
-			return new BuilderWithDeprecated(dep1, dep2, strings, numbers);
+			return new BuilderWithDeprecated(this.dep1, this.dep2, strings, numbers);
 		}
 		@java.lang.Override
 		@java.lang.SuppressWarnings("all")
@@ -108,7 +115,7 @@ public class BuilderWithDeprecated {
 		}
 	}
 	@java.lang.SuppressWarnings("all")
-	public static BuilderWithDeprecatedBuilder builder() {
-		return new BuilderWithDeprecatedBuilder();
+	public static BuilderWithDeprecated.BuilderWithDeprecatedBuilder builder() {
+		return new BuilderWithDeprecated.BuilderWithDeprecatedBuilder();
 	}
 }

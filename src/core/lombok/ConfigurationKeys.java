@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 The Project Lombok Authors.
+ * Copyright (C) 2013-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -26,9 +26,10 @@ import java.util.List;
 import lombok.core.configuration.CallSuperType;
 import lombok.core.configuration.CheckerFrameworkVersion;
 import lombok.core.configuration.ConfigurationKey;
-import lombok.core.configuration.LogDeclaration;
 import lombok.core.configuration.FlagUsageType;
 import lombok.core.configuration.IdentifierName;
+import lombok.core.configuration.LogDeclaration;
+import lombok.core.configuration.NullAnnotationLibrary;
 import lombok.core.configuration.NullCheckExceptionType;
 import lombok.core.configuration.TypeName;
 
@@ -87,6 +88,32 @@ public class ConfigurationKeys {
 	 * NB: If you enable this option, findbugs must be on the source or classpath, or you'll get errors that the type {@code SuppressFBWarnings} cannot be found.
 	 */
 	public static final ConfigurationKey<Boolean> ADD_FINDBUGS_SUPPRESSWARNINGS_ANNOTATIONS = new ConfigurationKey<Boolean>("lombok.extern.findbugs.addSuppressFBWarnings", "Generate @edu.umd.cs.findbugs.annotations.SuppressFBWarnings on all generated code (default: false).") {};
+	
+	/**
+	 * lombok configuration: {@code lombok.addNullAnnotations = }one of: [{@code none}, {@code javax}, {@code eclipse}, {@code jetbrains}, {@code netbeans}, {@code androidx}, {@code android.support}, {@code checkerframework}, {@code findbugs}, {@code spring}, {@code JML}, or a custom set of fully qualified annotation types].
+	 * 
+	 * Lombok generally copies relevant nullity annotations from your source code to the right places. However, sometimes lombok generates code where the nullability of some node is not dependent on something in your source code. You can configure lombok to add an appropriate nullity annotation in this case.<ul>
+	 * <li>{@code none} (the default) - no annotations are added.</li>
+	 * <li>{@code javax} - The annotations {@code javax.annotation.NonNull} and {@code javax.annotation.Nullable} are used.</li>
+	 * <li>{@code eclipse} - The annotations {@code org.eclipse.jdt.annotation.NonNull} and {@code org.eclipse.jdt.annotation.Nullable} are used.</li>
+	 * <li>{@code jetbrains} - The annotations {@code org.jetbrains.annotations.NotNull} and {@code org.jetbrains.annotations.Nullable} are used.</li>
+	 * <li>{@code netbeans} - The annotations {@code org.netbeans.api.annotations.common.NonNull} and {@code org.netbeans.api.annotations.common.NullAllowed} are used.</li>
+	 * <li>{@code androidx} - The annotations {@code androidx.annotation.NonNull} and {@code androidx.annotation.Nullable} are used.</li>
+	 * <li>{@code android.support} - The annotations {@code android.support.annotation.NonNull} and {@code android.support.annotation.Nullable} are used.</li>
+	 * <li>{@code checkerframework} - The annotations {@code org.checkerframework.checker.nullness.qual.NonNull} and {@code org.checkerframework.checker.nullness.qual.Nullable} are used.</li>
+	 * <li>{@code findbugs} - The annotations {@code edu.umd.cs.findbugs.annotations.NonNull} and {@code edu.umd.cs.findbugs.annotations.Nullable} are used.</li>
+	 * <li>{@code spring} - The annotations {@code org.springframework.lang.NonNull} and {@code org.springframework.lang.Nullable} are used.</li>
+	 * <li>{@code jml} - The annotations {@code org.jmlspecs.annotation.NonNull} and {@code org.jmlspecs.annotation.Nullable} are used.</li>
+	 * <li><code>CUSTOM:<em>fully.qualified.nonnull.annotation</em>:<em>fully.qualified.nullable.annotation</em></code> to configure your own types; the nullable annotation (and the colon) are optional.</li>
+	 * </ul>
+	 * <p>
+	 * Lombok will not put these annotations on the classpath for you; your project must be set up such that these annotations are available.
+	 * <p>
+	 * Current features which use this configuration:<ul>
+	 * <li>{@code @Builder.Singular} makes methods that accept a collection, all of which must be added. The parameter to this 'plural form' method is annotated.</li>
+	 * </ul>
+	 */
+	public static final ConfigurationKey<NullAnnotationLibrary> ADD_NULL_ANNOTATIONS = new ConfigurationKey<NullAnnotationLibrary>("lombok.addNullAnnotations", "Generate some style of null annotation for generated code where this is relevant. (default: none).") {};
 	
 	// ----- *ArgsConstructor -----
 	
@@ -287,7 +314,7 @@ public class ConfigurationKeys {
 	 * 
 	 * By default or if explicitly set to {@code true}, lombok will attempt to automatically singularize the name of your variable/parameter when using {@code @Singular}; the name is assumed to be written in english, and a plural. If explicitly to {@code false}, you must always specify the singular form; this is especially useful if your identifiers are in a foreign language.
 	 */
-	public static final ConfigurationKey<Boolean> SINGULAR_AUTO = new ConfigurationKey<Boolean>("lombok.singular.auto", "If true (default): Automatically singularize the assumed-to-be-plural name of your variable/parameter when using {@code @Singular}.") {}; 
+	public static final ConfigurationKey<Boolean> SINGULAR_AUTO = new ConfigurationKey<Boolean>("lombok.singular.auto", "If true (default): Automatically singularize the assumed-to-be-plural name of your variable/parameter when using @Singular.") {}; 
 	
 	// ##### Standalones #####
 	
@@ -312,10 +339,15 @@ public class ConfigurationKeys {
 	// ----- NonNull -----
 	
 	/**
-	 * lombok configuration: {@code lombok.nonNull.exceptionType} = one of: [{@code IllegalArgumentException}, {@code NullPointerException}, or {@code Assertion}].
+	 * lombok configuration: {@code lombok.nonNull.exceptionType} = one of: [{@code IllegalArgumentException}, {@code NullPointerException}, {@code JDK}, {@code Guava}, or {@code Assertion}].
 	 * 
-	 * Sets the exception to throw if {@code @NonNull} is applied to a method parameter, and a caller passes in {@code null}. If the chosen configuration is {@code Assertion}, an assertion is generated instead,
-	 * which would mean your code throws an {@code AssertionError} if assertions are enabled, and does nothing if assertions are not enabled.
+	 * Sets the behavior of the generated nullcheck if {@code @NonNull} is applied to a method parameter, and a caller passes in {@code null}.<ul>
+	 * <li>If the chosen configuration is {@code NullPointerException} (the default), or {@code IllegalArgumentException}, that exception type is a thrown, with as message <code><em>field-name</em> is marked non-null but is null</code>.</li>
+	 * <li>If the chosen configuration is {@code Assert}, then an {@code assert} statement is generated. This means an {@code AssertionError} will be thrown if assertions are on (VM started with {@code -ea} parameter), and nothing happens if not.</li>
+	 * <li>If the chosen configuration is {@code JDK}, a call to {@code java.util.Objects.requireNonNull} is generated with the fieldname passed along (which throws {@code NullPointerException}).</li>
+	 * <li>If the chosen configuration is {@code Guava}, a call to {@code com.google.common.base.Preconditions.checkNotNull} is generated with the fieldname passed along (which throws {@code NullPointerException}).</li>
+	 * </ul>
+	 * NB: The chosen nullcheck style is also used by {@code @Builder}'s {@code @Singular} annotation to check any collections passed to a plural-form method.
 	 */
 	public static final ConfigurationKey<NullCheckExceptionType> NON_NULL_EXCEPTION_TYPE = new ConfigurationKey<NullCheckExceptionType>("lombok.nonNull.exceptionType", "The type of the exception to throw if a passed-in argument is null (Default: NullPointerException).") {};
 	

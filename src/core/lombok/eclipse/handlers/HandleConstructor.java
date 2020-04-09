@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2019 The Project Lombok Authors.
+ * Copyright (C) 2010-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -411,7 +411,7 @@ public class HandleConstructor {
 			Argument parameter = new Argument(fieldName, fieldPos, copyType(field.type, source), Modifier.FINAL);
 			Annotation[] copyableAnnotations = findCopyableAnnotations(fieldNode);
 			if (hasNonNullAnnotations(fieldNode)) {
-				Statement nullCheck = generateNullCheck(parameter, sourceNode);
+				Statement nullCheck = generateNullCheck(parameter, sourceNode, null);
 				if (nullCheck != null) nullChecks.add(nullCheck);
 			}
 			parameter.annotations = copyAnnotations(source, copyableAnnotations);
@@ -530,7 +530,7 @@ public class HandleConstructor {
 		
 		constructor.modifiers = toEclipseModifier(level) | ClassFileConstants.AccStatic;
 		TypeDeclaration typeDecl = (TypeDeclaration) type.get();
-		constructor.returnType = EclipseHandlerUtil.namePlusTypeParamsToTypeReference(typeDecl.name, typeDecl.typeParameters, p);
+		constructor.returnType = EclipseHandlerUtil.namePlusTypeParamsToTypeReference(type, typeDecl.typeParameters, p);
 		constructor.annotations = null;
 		constructor.selector = name.toCharArray();
 		constructor.thrownExceptions = null;
@@ -562,6 +562,7 @@ public class HandleConstructor {
 		constructor.arguments = params.isEmpty() ? null : params.toArray(new Argument[0]);
 		constructor.statements = new Statement[] { new ReturnStatement(statement, (int) (p >> 32), (int)p) };
 		
+		createRelevantNonNullAnnotation(type, constructor);
 		constructor.traverse(new SetGeneratedByVisitor(source), typeDecl.scope);
 		return constructor;
 	}

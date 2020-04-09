@@ -24,8 +24,6 @@ package lombok.eclipse.handlers;
 import static lombok.core.handlers.HandlerUtil.*;
 import static lombok.eclipse.Eclipse.*;
 import static lombok.eclipse.handlers.EclipseHandlerUtil.*;
-import static lombok.eclipse.handlers.EclipseHandlerUtil.toAllSetterNames;
-import static lombok.eclipse.handlers.EclipseHandlerUtil.toSetterName;
 
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -247,7 +245,7 @@ public class HandleSetter extends EclipseAnnotationHandler<Setter> {
 		if (!hasNonNullAnnotations(fieldNode) && !hasNonNullAnnotations(fieldNode, onParam)) {
 			statements.add(assignment);
 		} else {
-			Statement nullCheck = generateNullCheck(field.type, paramName, sourceNode);
+			Statement nullCheck = generateNullCheck(field.type, paramName, sourceNode, null);
 			if (nullCheck != null) statements.add(nullCheck);
 			statements.add(assignment);
 		}
@@ -261,6 +259,8 @@ public class HandleSetter extends EclipseAnnotationHandler<Setter> {
 		}
 		method.statements = statements.toArray(new Statement[0]);
 		param.annotations = copyAnnotations(source, copyableAnnotations, onParam.toArray(new Annotation[0]));
+		
+		if (returnType != null && returnStatement != null) createRelevantNonNullAnnotation(sourceNode, method);
 		
 		method.traverse(new SetGeneratedByVisitor(source), parent.scope);
 		return method;

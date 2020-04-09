@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 The Project Lombok Authors.
+ * Copyright (C) 2014-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -39,8 +39,8 @@ public class TestConfiguration {
 	@Test
 	public void testDisplayVerbose() throws Exception {
 		
-		@SuppressWarnings("unchecked") 
-		Collection<ConfigurationKey<?>> keys = Arrays.asList(ACCESSORS_FLAG_USAGE, ACCESSORS_CHAIN, ACCESSORS_PREFIX, LOG_ANY_FIELD_NAME);
+		@SuppressWarnings(value = {"unchecked", "deprecation"})
+		Collection<ConfigurationKey<?>> keys = Arrays.asList(ACCESSORS_FLAG_USAGE, ACCESSORS_CHAIN, ACCESSORS_PREFIX, ADD_GENERATED_ANNOTATIONS, ADD_JAVAX_GENERATED_ANNOTATIONS, ANY_CONSTRUCTOR_ADD_CONSTRUCTOR_PROPERTIES, LOG_ANY_FIELD_NAME, COPYABLE_ANNOTATIONS);
 		
 		String baseName = "test/configuration/resource/configurationRoot/";
 		File directory = new File(baseName);
@@ -52,7 +52,15 @@ public class TestConfiguration {
 		PrintStream outStream = new PrintStream(rawOut);
 		PrintStream errStream = new PrintStream(rawErr);
 		
-		int result = new ConfigurationApp().redirectOutput(outStream, errStream).display(keys, true, paths, true);
+		ConfigurationFile.setEnvironment("env", normalizedName + "/e1");
+		String userHome = System.getProperty("user.home");
+		int result = -1;
+		try {
+			System.setProperty("user.home", normalizedName + "/home");
+			result = new ConfigurationApp().redirectOutput(outStream, errStream).display(keys, true, paths, true, false);
+		} finally {
+			System.setProperty("user.home", userHome);
+		}
 		
 		outStream.flush();
 		errStream.flush();

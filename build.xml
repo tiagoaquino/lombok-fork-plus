@@ -1,5 +1,5 @@
 <!--
- Copyright (C) 2010-2018 The Project Lombok Authors.
+ Copyright (C) 2010-2020 The Project Lombok Authors.
   
   Permission is hereby granted, free of charge, to any person obtaining a copy
   of this software and associated documentation files (the "Software"), to deal
@@ -81,7 +81,7 @@ the common tasks and can be called on to run the main aspects of all the sub-scr
 	
 	<target name="load-ipp" depends="download-ipp">
 		<taskdef classpath="lib/ivyplusplus.jar" resource="com/zwitserloot/ivyplusplus/antlib.xml" uri="antlib:com.zwitserloot.ivyplusplus" />
-		<ivy:ensureippversion version="1.26" property="ivyplusplus.minimumAvailable" />
+		<ivy:ensureippversion version="1.34" property="ivyplusplus.minimumAvailable" />
 	</target>
 	
 	<target name="redownload-ipp" unless="ivyplusplus.minimumAvailable">
@@ -334,6 +334,7 @@ lombok.launch.AnnotationProcessorHider$ClaimingProcessor,isolating</echo>
 		<echo file="release-timestamp.txt">${releaseTimestamp}</echo>
 		<zip destfile="dist/lombok-${lombok.version}.jar">
 			<fileset dir="build" includes="changelog.txt, latestchanges.html" />
+			<fileset dir="." includes="README.md" />
 			<fileset dir="." includes="LICENSE" />
 			<fileset dir="." includes="AUTHORS" />
 			<fileset dir="." includes="release-timestamp.txt" />
@@ -392,6 +393,8 @@ lombok.launch.AnnotationProcessorHider$ClaimingProcessor,isolating</echo>
 	</target>
 	
 	<target name="intellij" depends="deps, contrib" description="Creates intellij project files and downloads all dependencies. Open this directory as a project in IntelliJ after running this target.">
+		<echo> ** WARNING ** The core lombok contributors all use eclipse to develop lombok. We have some ability on letting you work on lombok via intellij, but whether the generated project can be used in a modern intellij is currently unknown. Please do continue, but be aware that trying to work on lombok from intellij may run into problems. If you want to adopt 'work on lombok via intellij' as a task, we're open to it!</echo>
+		<input>Press return to continue</input>
 		<ivy:intellijgen>
 			<conf name="build" sources="contrib" />
 			<conf name="test" sources="contrib" />
@@ -858,19 +861,6 @@ You can also create your own by writing a 'testenvironment.properties' file. The
 			<tarfileset dir="build/mavenPublish" includes="pom.xml" />
 		</tar>
 	</target>
-
-    <target name="config-myrepo-url" unless="myrepo.url">
-		<input message="What is your private MyMavenRepo write URL? (Enter to abort)." addproperty="myrepo.url" />
-		<condition property="myrepo.urlBlank"><equals arg1="${myrepo.url}" arg2="" trim="true" /></condition>
-		<fail if="myrepo.urlBlank">Aborted.</fail>
-	</target>
-
-	<target name="my-repo-publish" depends="config-myrepo-url, maven" description="Upload to My Repo Maven">
-		<copy tofile="dist/lombok-${lombok.version}.pom" overwrite="true" file="build/mavenPublish/pom.xml"></copy>
-	    <ivy:publish resolver="my-maven-repo" overwrite="true" pubrevision="${lombok.version}" publishivy="false">
-	    	<artifacts pattern="dist/[artifact].[ext]"/>
-	    </ivy:publish>
-	</target>
 	
 	<target name="maven-publish" depends="config-ssh, maven, utils-maven" description="Build a maven artifact bundle then upload it to projectlombok.org and ask the server to upload it to maven central">
 		<ivy:scpUpload
@@ -963,7 +953,7 @@ You can also create your own by writing a 'testenvironment.properties' file. The
 		<ant antfile="buildScripts/website.ant.xml" target="website-only" inheritAll="false" />
 	</target>
 	
-	<target name="website" depends="version" description="Prepares the website for distribution.">
+	<target name="website" depends="version, compile" description="Prepares the website for distribution.">
 		<ant antfile="buildScripts/website.ant.xml" target="website" inheritAll="false">
 			<property name="lombok.version" value="${lombok.version}" />
 			<property name="lombok.fullversion" value="${lombok.fullversion}" />
@@ -988,7 +978,7 @@ You can also create your own by writing a 'testenvironment.properties' file. The
 		</ant>
 	</target>
 	
-	<target name="website-publish" depends="config-ssh, clean, version, ensureSupportersDeps"
+	<target name="website-publish" depends="config-ssh, clean, version, ensureSupportersDeps, compile"
 			description="Prepares the website for distribution and then publishes it to projectlombok.org.">
 		<ant antfile="buildScripts/website.ant.xml" target="website-publish" inheritAll="false">
 			<property name="lombok.version" value="${lombok.version}" />

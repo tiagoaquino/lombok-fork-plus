@@ -4,7 +4,7 @@
     @java.lang.SuppressWarnings("all") BuilderWithNonNullBuilder() {
       super();
     }
-    public @java.lang.SuppressWarnings("all") BuilderWithNonNullBuilder id(final @lombok.NonNull String id) {
+    public @java.lang.SuppressWarnings("all") BuilderWithNonNull.BuilderWithNonNullBuilder id(final @lombok.NonNull String id) {
       if ((id == null))
           {
             throw new java.lang.NullPointerException("id is marked non-null but is null");
@@ -13,7 +13,7 @@
       return this;
     }
     public @java.lang.SuppressWarnings("all") BuilderWithNonNull build() {
-      return new BuilderWithNonNull(id);
+      return new BuilderWithNonNull(this.id);
     }
     public @java.lang.Override @java.lang.SuppressWarnings("all") java.lang.String toString() {
       return (("BuilderWithNonNull.BuilderWithNonNullBuilder(id=" + this.id) + ")");
@@ -28,7 +28,7 @@
         }
     this.id = id;
   }
-  public static @java.lang.SuppressWarnings("all") BuilderWithNonNullBuilder builder() {
-    return new BuilderWithNonNullBuilder();
+  public static @java.lang.SuppressWarnings("all") BuilderWithNonNull.BuilderWithNonNullBuilder builder() {
+    return new BuilderWithNonNull.BuilderWithNonNullBuilder();
   }
 }

@@ -34,19 +34,19 @@ final class ConstructorsWithBuilderDefaults<T> {
 		ConstructorsWithBuilderDefaultsBuilder() {
 		}
 		@java.lang.SuppressWarnings("all")
-		public ConstructorsWithBuilderDefaultsBuilder<T> z(final java.util.List<T> z) {
+		public ConstructorsWithBuilderDefaults.ConstructorsWithBuilderDefaultsBuilder<T> z(final java.util.List<T> z) {
 			this.z$value = z;
 			z$set = true;
 			return this;
 		}
 		@java.lang.SuppressWarnings("all")
-		public ConstructorsWithBuilderDefaultsBuilder<T> x(final T x) {
+		public ConstructorsWithBuilderDefaults.ConstructorsWithBuilderDefaultsBuilder<T> x(final T x) {
 			this.x$value = x;
 			x$set = true;
 			return this;
 		}
 		@java.lang.SuppressWarnings("all")
-		public ConstructorsWithBuilderDefaultsBuilder<T> q(final T q) {
+		public ConstructorsWithBuilderDefaults.ConstructorsWithBuilderDefaultsBuilder<T> q(final T q) {
 			this.q = q;
 			return this;
 		}
@@ -54,10 +54,10 @@ final class ConstructorsWithBuilderDefaults<T> {
 		@java.lang.SuppressWarnings("all")
 		public ConstructorsWithBuilderDefaults<T> build() {
 			java.util.List<T> z$value = this.z$value;
-			if (!z$set) z$value = ConstructorsWithBuilderDefaults.<T>$default$z();
+			if (!this.z$set) z$value = ConstructorsWithBuilderDefaults.<T>$default$z();
 			T x$value = this.x$value;
-			if (!x$set) x$value = ConstructorsWithBuilderDefaults.<T>$default$x();
-			return new ConstructorsWithBuilderDefaults<T>(z$value, x$value, q);
+			if (!this.x$set) x$value = ConstructorsWithBuilderDefaults.<T>$default$x();
+			return new ConstructorsWithBuilderDefaults<T>(z$value, x$value, this.q);
 		}
 		@java.lang.Override
 		@java.lang.SuppressWarnings("all")
@@ -66,8 +66,8 @@ final class ConstructorsWithBuilderDefaults<T> {
 		}
 	}
 	@java.lang.SuppressWarnings("all")
-	public static <T> ConstructorsWithBuilderDefaultsBuilder<T> builder() {
-		return new ConstructorsWithBuilderDefaultsBuilder<T>();
+	public static <T> ConstructorsWithBuilderDefaults.ConstructorsWithBuilderDefaultsBuilder<T> builder() {
+		return new ConstructorsWithBuilderDefaults.ConstructorsWithBuilderDefaultsBuilder<T>();
 	}
 	@java.lang.SuppressWarnings("all")
 	private ConstructorsWithBuilderDefaults() {

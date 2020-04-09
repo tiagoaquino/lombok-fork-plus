@@ -14,18 +14,18 @@ class BuilderGenericMethod<T> {
 		MapBuilder() {
 		}
 		@java.lang.SuppressWarnings("all")
-		public MapBuilder<N> a(final int a) {
+		public BuilderGenericMethod<T>.MapBuilder<N> a(final int a) {
 			this.a = a;
 			return this;
 		}
 		@java.lang.SuppressWarnings("all")
-		public MapBuilder<N> b(final long b) {
+		public BuilderGenericMethod<T>.MapBuilder<N> b(final long b) {
 			this.b = b;
 			return this;
 		}
 		@java.lang.SuppressWarnings("all")
 		public Map<N, T> build() {
-			return BuilderGenericMethod.this.<N>foo(a, b);
+			return BuilderGenericMethod.this.<N>foo(this.a, this.b);
 		}
 		@java.lang.Override
 		@java.lang.SuppressWarnings("all")
@@ -34,7 +34,7 @@ class BuilderGenericMethod<T> {
 		}
 	}
 	@java.lang.SuppressWarnings("all")
-	public <N extends Number> MapBuilder<N> builder() {
-		return new MapBuilder<N>();
+	public <N extends Number> BuilderGenericMethod<T>.MapBuilder<N> builder() {
+		return this.new MapBuilder<N>();
 	}
 }
