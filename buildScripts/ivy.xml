@@ -1,5 +1,5 @@
 <ivy-module version="2.0">
-	<info organisation="projectlombok.org" module="lombok" />
+	<info organisation="org.projectlombok" module="lombok-plus" />
 	<configurations>
 		<conf name="eclipseBuild" />
 		<conf name="netbeansBuild" />
@@ -17,6 +17,12 @@
 		<conf name="javac7" />
 		<conf name="supporters" />
 	</configurations>
+    <publications>
+		<artifact name="lombok-${lombok.version}-javadoc" type="javadoc" ext="jar"/>
+		<artifact name="lombok-${lombok.version}-sources" type="sources" ext="jar"/>
+		<artifact name="lombok-${lombok.version}" type="" ext="jar" />
+		<artifact name="lombok-${lombok.version}" type="" ext="pom"/>
+	</publications>
 	<dependencies>
 		<dependency org="org.projectlombok" name="lombok.patcher" rev="0.36" conf="buildBase->default; runtime->default" />
 		<dependency org="zwitserloot.com" name="cmdreader" rev="1.2" conf="buildBase->runtime; runtime" />

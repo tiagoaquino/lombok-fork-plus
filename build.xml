@@ -861,6 +861,19 @@ You can also create your own by writing a 'testenvironment.properties' file. The
 			<tarfileset dir="build/mavenPublish" includes="pom.xml" />
 		</tar>
 	</target>
+
+    <target name="config-myrepo-url" unless="myrepo.url">
+		<input message="What is your private MyMavenRepo write URL? (Enter to abort)." addproperty="myrepo.url" />
+		<condition property="myrepo.urlBlank"><equals arg1="${myrepo.url}" arg2="" trim="true" /></condition>
+		<fail if="myrepo.urlBlank">Aborted.</fail>
+	</target>
+
+	<target name="my-repo-publish" depends="config-myrepo-url, maven" description="Upload to My Repo Maven">
+		<copy tofile="dist/lombok-${lombok.version}.pom" overwrite="true" file="build/mavenPublish/pom.xml"></copy>
+	    <ivy:publish resolver="my-maven-repo" overwrite="true" pubrevision="${lombok.version}" publishivy="false">
+	    	<artifacts pattern="dist/[artifact].[ext]"/>
+	    </ivy:publish>
+	</target>
 	
 	<target name="maven-publish" depends="config-ssh, maven, utils-maven" description="Build a maven artifact bundle then upload it to projectlombok.org and ask the server to upload it to maven central">
 		<ivy:scpUpload
