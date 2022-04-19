@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2016 The Project Lombok Authors.
+ * Copyright (C) 2015-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -29,8 +29,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 
-import org.mangosdk.spi.ProviderFor;
-
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.TreeVisitor;
 import com.sun.source.util.TreeScanner;
@@ -56,8 +54,9 @@ import lombok.experimental.Helper;
 import lombok.javac.JavacAnnotationHandler;
 import lombok.javac.JavacNode;
 import lombok.javac.JavacTreeMaker;
+import lombok.spi.Provides;
 
-@ProviderFor(JavacAnnotationHandler.class)
+@Provides
 public class HandleHelper extends JavacAnnotationHandler<Helper> {
 	private List<JCStatement> getStatementsFromJcNode(JCTree tree) {
 		if (tree instanceof JCBlock) return ((JCBlock) tree).stats;
@@ -71,7 +70,7 @@ public class HandleHelper extends JavacAnnotationHandler<Helper> {
 		else throw new IllegalArgumentException("Can't set statements on node type: " + tree.getClass());
 	}
 	
-	@Override public void handle(AnnotationValues<Helper> annotation, JCAnnotation ast, JavacNode annotationNode) {
+	@Override public void handle(AnnotationValues<Helper> annotation, JCAnnotation ast, final JavacNode annotationNode) {
 		handleExperimentalFlagUsage(annotationNode, ConfigurationKeys.HELPER_FLAG_USAGE, "@Helper");
 		
 		deleteAnnotationIfNeccessary(annotationNode, Helper.class);
@@ -120,6 +119,7 @@ public class HandleHelper extends JavacAnnotationHandler<Helper> {
 				JCIdent jci = (JCIdent) jcmi.meth;
 				if (Arrays.binarySearch(knownMethodNames_, jci.name.toString()) < 0) return;
 				jcmi.meth = maker.Select(maker.Ident(helperName), jci.name);
+				recursiveSetGeneratedBy(jcmi.meth, annotationNode);
 				helperUsed[0] = true;
 			}
 		};
@@ -144,6 +144,7 @@ public class HandleHelper extends JavacAnnotationHandler<Helper> {
 			JCExpression init = maker.NewClass(null, List.<JCExpression>nil(), maker.Ident(annotatedType_.name), List.<JCExpression>nil(), null);
 			JCExpression varType = maker.Ident(annotatedType_.name);
 			JCVariableDecl decl = maker.VarDef(maker.Modifiers(Flags.FINAL), helperName, varType, init);
+			recursiveSetGeneratedBy(decl, annotationNode);
 			newStatements.append(decl);
 		}
 		setStatementsOfJcNode(containingBlock.get(), newStatements.toList());

@@ -15,6 +15,23 @@ class LoggerJBossLogOuter {
 	}
 }
 
+@JBossLog
+enum LoggerJBossLogWithEnum {
+	CONSTANT;
+}
+
+class LoggerJBossLogWithInnerEnum {
+	@JBossLog
+	enum Inner {
+		CONSTANT;
+	}
+}
+
 @JBossLog(topic="DifferentLogger")
 class LoggerJBossLogWithDifferentLoggerName {
+}
+
+@JBossLog(topic=LoggerJBossLogWithStaticField.TOPIC)
+class LoggerJBossLogWithStaticField {
+	static final String TOPIC = "StaticField";
 }

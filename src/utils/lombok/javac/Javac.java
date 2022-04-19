@@ -37,12 +37,6 @@ import javax.lang.model.type.NoType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeVisitor;
 
-import lombok.core.ClassLiteral;
-import lombok.core.FieldSelect;
-import lombok.javac.JavacTreeMaker.TreeTag;
-import lombok.javac.JavacTreeMaker.TypeTag;
-import lombok.permit.Permit;
-
 import com.sun.tools.javac.code.Flags;
 import com.sun.tools.javac.code.Source;
 import com.sun.tools.javac.code.Symtab;
@@ -61,6 +55,13 @@ import com.sun.tools.javac.tree.JCTree.JCLiteral;
 import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
 import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
 
+import lombok.core.ClassLiteral;
+import lombok.core.FieldSelect;
+import lombok.core.JavaIdentifiers;
+import lombok.javac.JavacTreeMaker.TreeTag;
+import lombok.javac.JavacTreeMaker.TypeTag;
+import lombok.permit.Permit;
+
 /**
  * Container for static utility methods relevant to lombok's operation on javac.
  */
@@ -69,13 +70,18 @@ public class Javac {
 		// prevent instantiation
 	}
 	
-	/** Matches any of the 8 primitive names, such as {@code boolean}. */
-	private static final Pattern PRIMITIVE_TYPE_NAME_PATTERN = Pattern.compile("^(boolean|byte|short|int|long|float|double|char)$");
-	
 	private static final Pattern VERSION_PARSER = Pattern.compile("^(\\d{1,6})\\.?(\\d{1,6})?.*$");
 	private static final Pattern SOURCE_PARSER = Pattern.compile("^JDK(\\d{1,6})_?(\\d{1,6})?.*$");
 	
 	private static final AtomicInteger compilerVersion = new AtomicInteger(-1);
+	
+	/* This section includes flags that would ordinarily be in Flags, but which are 'too new' (we don't compile against older versions of javac for compatibility). */
+	public static final long RECORD = 1L << 61; // ClassSymbols, MethodSymbols, VarSymbols (Marks types as being records, as well as the 'fields' in the compact declaration, and the canonical constructor)
+	public static final long COMPACT_RECORD_CONSTRUCTOR = 1L << 51; // MethodSymbols (the 'implicit' many-args constructor that records have)
+	public static final long UNINITIALIZED_FIELD = 1L << 51; // VarSymbols (To identify fields that the compact record constructor won't initialize)
+	public static final long GENERATED_MEMBER = 1L << 24; // MethodSymbols, VarSymbols (marks methods and the constructor generated in records)
+	public static final long SEALED = 1L << 62; // ClassSymbols (Flag to indicate sealed class/interface declaration)
+	public static final long NON_SEALED = 1L << 63; // ClassSymbols (Flag to indicate that the class/interface was declared with the non-sealed modifier)
 	
 	/**
 	 * Returns the version of this java compiler, i.e. the JDK that it shipped in. For example, for javac v1.7, this returns {@code 7}.
@@ -135,8 +141,7 @@ public class Javac {
 	 * expression) represents a primitive type.
 	 */
 	public static boolean isPrimitive(JCExpression ref) {
-		String typeName = ref.toString();
-		return PRIMITIVE_TYPE_NAME_PATTERN.matcher(typeName).matches();
+		return JavaIdentifiers.isPrimitive(ref.toString());
 	}
 	
 	/**
@@ -257,6 +262,9 @@ public class Javac {
 		}
 	}
 	
+	/**
+	 * In some versions, the field's type is {@code JCTree}, in others it is {@code JCExpression}, which at the JVM level are not the same.
+	 */
 	public static JCTree getExtendsClause(JCClassDecl decl) {
 		try {
 			return (JCTree) getExtendsClause.invoke(decl);
@@ -282,8 +290,20 @@ public class Javac {
 		return null;
 	}
 	
+	/**
+	 * Checks if the javadoc comment associated with {@code tree} has a position set.
+	 * 
+	 * Returns true if there is no javadoc comment on the node, or it has position (position isn't -1).
+	 */
+	public static boolean validateDocComment(JCCompilationUnit cu, JCTree tree) {
+		Object dc = getDocComments(cu);
+		if (!instanceOfDocCommentTable(dc)) return true;
+		return JavadocOps_8.validateJavadoc(dc, tree);
+	}
+	
 	@SuppressWarnings("unchecked")
 	public static void setDocComment(JCCompilationUnit cu, JCTree node, String javadoc) {
+		if (javadoc == null) return;
 		Object dc = getDocComments(cu);
 		if (dc instanceof Map) {
 			((Map<JCTree, String>) dc).put(node, javadoc);
@@ -304,6 +324,12 @@ public class Javac {
 			return javadoc.getText();
 		}
 		
+		public static boolean validateJavadoc(Object dc, JCTree node) {
+			DocCommentTable dct = (DocCommentTable) dc;
+			Comment javadoc = dct.getComment(node);
+			return javadoc == null || javadoc.getText() == null || javadoc.getSourcePos(0) >= 0;
+		}
+		
 		static void setJavadoc(Object dc, JCTree node, String javadoc) {
 			DocCommentTable dct = (DocCommentTable) dc;
 			Comment newCmt = createJavadocComment(javadoc, node);
@@ -317,7 +343,7 @@ public class Javac {
 				}
 				
 				@Override public int getSourcePos(int index) {
-					return -1;
+					return field == null ? -1 : field.getStartPosition();
 				}
 				
 				@Override public CommentStyle getStyle() {
@@ -366,6 +392,7 @@ public class Javac {
 	public static void storeEnd(JCTree tree, int pos, JCCompilationUnit top) {
 		try {
 			Object endPositions = JCCOMPILATIONUNIT_ENDPOSITIONS.get(top);
+			if (endPositions == null) return;
 			storeEnd.invoke(endPositions, tree, pos);
 		} catch (IllegalAccessException e) {
 			throw sneakyThrow(e);

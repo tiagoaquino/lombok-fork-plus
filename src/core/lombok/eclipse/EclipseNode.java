@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2019 The Project Lombok Authors.
+ * Copyright (C) 2009-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,10 +23,6 @@ package lombok.eclipse;
 
 import java.util.List;
 
-import lombok.core.AnnotationValues;
-import lombok.core.AST.Kind;
-import lombok.eclipse.handlers.EclipseHandlerUtil;
-
 import org.eclipse.jdt.internal.compiler.ast.ASTNode;
 import org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.Annotation;
@@ -36,10 +32,15 @@ import org.eclipse.jdt.internal.compiler.ast.CompilationUnitDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.FieldDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.Initializer;
 import org.eclipse.jdt.internal.compiler.ast.LocalDeclaration;
+import org.eclipse.jdt.internal.compiler.ast.MethodDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.Statement;
 import org.eclipse.jdt.internal.compiler.ast.TypeDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.TypeReference;
 import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
+
+import lombok.core.AST.Kind;
+import lombok.core.AnnotationValues;
+import lombok.eclipse.handlers.EclipseHandlerUtil;
 
 /**
  * Eclipse specific version of the LombokNode class.
@@ -142,16 +143,6 @@ public class EclipseNode extends lombok.core.LombokNode<EclipseAST, EclipseNode,
 		}
 	}
 	
-	@Override protected boolean fieldContainsAnnotation(ASTNode field, ASTNode annotation) {
-		if (!(field instanceof FieldDeclaration)) return false;
-		FieldDeclaration f = (FieldDeclaration) field;
-		if (f.annotations == null) return false;
-		for (Annotation childAnnotation : f.annotations) {
-			if (childAnnotation == annotation) return true;
-		}
-		return false;
-	}
-	
 	/** {@inheritDoc} */
 	@Override public String getName() {
 		final char[] n;
@@ -224,13 +215,16 @@ public class EclipseNode extends lombok.core.LombokNode<EclipseAST, EclipseNode,
 	
 	@Override public boolean isStatic() {
 		if (node instanceof TypeDeclaration) {
+			TypeDeclaration t = (TypeDeclaration) node;
+			int f = t.modifiers;
+			if (((ClassFileConstants.AccInterface | ClassFileConstants.AccEnum) & f) != 0) return true;
+			
 			EclipseNode directUp = directUp();
 			if (directUp == null || directUp.getKind() == Kind.COMPILATION_UNIT) return true;
 			if (!(directUp.get() instanceof TypeDeclaration)) return false;
 			TypeDeclaration p = (TypeDeclaration) directUp.get();
-			int f = p.modifiers;
-			if ((ClassFileConstants.AccInterface & f) != 0) return true;
-			if ((ClassFileConstants.AccEnum & f) != 0) return true;
+			f = p.modifiers;
+			if (((ClassFileConstants.AccInterface | ClassFileConstants.AccEnum) & f) != 0) return true;
 		}
 		
 		if (node instanceof FieldDeclaration) {
@@ -246,6 +240,55 @@ public class EclipseNode extends lombok.core.LombokNode<EclipseAST, EclipseNode,
 		if (i == null) return false;
 		int f = i.intValue();
 		return (ClassFileConstants.AccStatic & f) != 0;
+	}
+	
+	@Override public boolean isFinal() {
+		if (node instanceof FieldDeclaration) {
+			EclipseNode directUp = directUp();
+			if (directUp != null && directUp.get() instanceof TypeDeclaration) {
+				TypeDeclaration p = (TypeDeclaration) directUp.get();
+				int f = p.modifiers;
+				if (((ClassFileConstants.AccInterface | ClassFileConstants.AccEnum) & f) != 0) return true;
+			}
+		}
+		
+		Integer i = getModifiers();
+		if (i == null) return false;
+		int f = i.intValue();
+		return (ClassFileConstants.AccFinal & f) != 0;
+	}
+	
+	@Override public boolean isPrimitive() {
+		if (node instanceof FieldDeclaration && !isEnumMember()) {
+			return Eclipse.isPrimitive(((FieldDeclaration) node).type);
+		}
+		if (node instanceof MethodDeclaration) {
+			return Eclipse.isPrimitive(((MethodDeclaration) node).returnType);
+		}
+		return false;
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override public String fieldOrMethodBaseType() {
+		TypeReference typeReference = null;
+		if (node instanceof FieldDeclaration && !isEnumMember()) {
+			typeReference = ((FieldDeclaration) node).type;
+		}
+		if (node instanceof MethodDeclaration) {
+			typeReference = ((MethodDeclaration) node).returnType;
+		}
+		if (typeReference == null) return null;
+		
+		String fqn = Eclipse.toQualifiedName(typeReference.getTypeName());
+		if (typeReference.dimensions() == 0) return fqn;
+		StringBuilder result = new StringBuilder(fqn.length() + 2 * typeReference.dimensions());
+		result.append(fqn);
+		for (int i = 0; i < typeReference.dimensions(); i++) {
+			result.append("[]");
+		}
+		return result.toString();
 	}
 	
 	@Override public boolean isTransient() {

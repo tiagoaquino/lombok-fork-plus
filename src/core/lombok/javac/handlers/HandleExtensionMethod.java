@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2014 The Project Lombok Authors.
+ * Copyright (C) 2012-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +28,7 @@ import static lombok.javac.handlers.JavacResolver.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import javax.lang.model.element.ElementKind;
 
@@ -37,12 +38,13 @@ import lombok.core.HandlerPriority;
 import lombok.experimental.ExtensionMethod;
 import lombok.javac.JavacAnnotationHandler;
 import lombok.javac.JavacNode;
-
-import org.mangosdk.spi.ProviderFor;
+import lombok.javac.JavacResolution;
+import lombok.spi.Provides;
 
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.util.TreeScanner;
 import com.sun.tools.javac.code.Symbol;
+import com.sun.tools.javac.code.Symbol.ClassSymbol;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Symbol.TypeSymbol;
 import com.sun.tools.javac.code.Type;
@@ -51,6 +53,7 @@ import com.sun.tools.javac.code.Type.ErrorType;
 import com.sun.tools.javac.code.Type.ForAll;
 import com.sun.tools.javac.code.Type.MethodType;
 import com.sun.tools.javac.code.Types;
+import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.JCTree.JCAnnotation;
 import com.sun.tools.javac.tree.JCTree.JCClassDecl;
 import com.sun.tools.javac.tree.JCTree.JCExpression;
@@ -61,7 +64,7 @@ import com.sun.tools.javac.tree.JCTree.JCMethodInvocation;
 /**
  * Handles the {@link ExtensionMethod} annotation for javac.
  */
-@ProviderFor(JavacAnnotationHandler.class)
+@Provides
 @HandlerPriority(66560) // 2^16 + 2^10; we must run AFTER HandleVal which is at 2^16
 public class HandleExtensionMethod extends JavacAnnotationHandler<ExtensionMethod> {
 	@Override
@@ -148,8 +151,9 @@ public class HandleExtensionMethod extends JavacAnnotationHandler<ExtensionMetho
 		
 		@Override
 		public Void visitMethodInvocation(final MethodInvocationTree tree, final Void p) {
+			super.visitMethodInvocation(tree, p);
 			handleMethodCall((JCMethodInvocation) tree);
-			return super.visitMethodInvocation(tree, p);
+			return null;
 		}
 		
 		private void handleMethodCall(final JCMethodInvocation methodCall) {
@@ -166,13 +170,25 @@ public class HandleExtensionMethod extends JavacAnnotationHandler<ExtensionMetho
 			JCExpression receiver = receiverOf(methodCall);
 			String methodName = methodNameOf(methodCall);
 			
-			if ("this".equals(methodName) || "super".equals(methodName)) return;
-			Type resolvedMethodCall = CLASS_AND_METHOD.resolveMember(methodCallNode, methodCall);
-			if (resolvedMethodCall == null) return;
-			if (!suppressBaseMethods && !(resolvedMethodCall instanceof ErrorType)) return;
-			Type receiverType = CLASS_AND_METHOD.resolveMember(methodCallNode, receiver);
-			if (receiverType == null) return;
-			if (receiverType.tsym.toString().endsWith(receiver.toString())) return;
+			if ("this".equals(receiver.toString()) || "this".equals(methodName) || "super".equals(methodName)) return;
+			Map<JCTree, JCTree> resolution = new JavacResolution(methodCallNode.getContext()).resolveMethodMember(methodCallNode);
+			
+			JCTree resolvedMethodCall = resolution.get(methodCall);
+			if (resolvedMethodCall == null || resolvedMethodCall.type == null) return;
+			if (!suppressBaseMethods && !(resolvedMethodCall.type instanceof ErrorType)) return;
+			
+			JCTree resolvedReceiver = resolution.get(receiver);
+			if (resolvedReceiver == null || resolvedReceiver.type == null) return;
+			Type receiverType = resolvedReceiver.type;
+			
+			// Skip static method access
+			Symbol sym = null;
+			if (resolvedReceiver instanceof JCIdent) {
+				sym = ((JCIdent) resolvedReceiver).sym;
+			} else if (resolvedReceiver instanceof JCFieldAccess) {
+				sym = ((JCFieldAccess) resolvedReceiver).sym;
+			}
+			if (sym instanceof ClassSymbol) return;
 			
 			Types types = Types.instance(annotationNode.getContext());
 			for (Extension extension : extensions) {
@@ -186,6 +202,7 @@ public class HandleExtensionMethod extends JavacAnnotationHandler<ExtensionMetho
 					if (!types.isAssignable(receiverType, firstArgType)) continue;
 					methodCall.args = methodCall.args.prepend(receiver);
 					methodCall.meth = chainDotsString(annotationNode, extensionProvider.toString() + "." + methodName);
+					recursiveSetGeneratedBy(methodCall.meth, methodCallNode);
 					return;
 				}
 			}

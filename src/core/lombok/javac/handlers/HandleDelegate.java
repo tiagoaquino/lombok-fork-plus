@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2014 The Project Lombok Authors.
+ * Copyright (C) 2010-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -43,11 +43,10 @@ import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 
-import org.mangosdk.spi.ProviderFor;
-
 import com.sun.tools.javac.code.Attribute.Compound;
 import com.sun.tools.javac.code.Flags;
 import com.sun.tools.javac.code.Symbol;
+import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Symbol.TypeSymbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.Type.ClassType;
@@ -80,8 +79,10 @@ import lombok.javac.JavacResolution;
 import lombok.javac.JavacResolution.TypeNotConvertibleException;
 import lombok.javac.JavacTreeMaker;
 import lombok.javac.ResolutionResetNeeded;
+import lombok.permit.Permit;
+import lombok.spi.Provides;
 
-@ProviderFor(JavacAnnotationHandler.class)
+@Provides
 @HandlerPriority(HandleDelegate.HANDLE_DELEGATE_PRIORITY) //2^16; to make sure that we also delegate generated methods.
 @ResolutionResetNeeded
 public class HandleDelegate extends JavacAnnotationHandler<Delegate> {
@@ -175,14 +176,14 @@ public class HandleDelegate extends JavacAnnotationHandler<Delegate> {
 		List<MethodSig> signaturesToExclude = new ArrayList<MethodSig>();
 		Set<String> banList = new HashSet<String>();
 		banList.addAll(METHODS_IN_OBJECT);
-		/* To exclude all methods in the class itself, try this:
-		for (Symbol member : ((JCClassDecl)typeNode.get()).sym.getEnclosedElements()) {
-			if (member instanceof MethodSymbol) {
-				MethodSymbol method = (MethodSymbol) member;
-				banList.add(printSig((ExecutableType) method.asType(), method.name, annotationNode.getTypesUtil()));
+		
+		// Add already implemented methods to ban list
+		JavacNode typeNode = upToTypeNode(annotationNode);
+		for (Symbol m : ((JCClassDecl)typeNode.get()).sym.getEnclosedElements()) {
+			if (m instanceof MethodSymbol) {
+				banList.add(printSig((ExecutableType) m.asType(), m.name, annotationNode.getTypesUtil()));
 			}
 		}
-		 */
 		
 		try {
 			for (Type t : toExclude) {
@@ -347,7 +348,7 @@ public class HandleDelegate extends JavacAnnotationHandler<Delegate> {
 		JCStatement body = useReturn ? maker.Return(delegateCall) : maker.Exec(delegateCall);
 		JCBlock bodyBlock = maker.Block(0, com.sun.tools.javac.util.List.of(body));
 		
-		return recursiveSetGeneratedBy(maker.MethodDef(mods, sig.name, returnType, toList(typeParams), toList(params), toList(thrown), bodyBlock, null), annotation.get(), annotation.getContext());
+		return recursiveSetGeneratedBy(maker.MethodDef(mods, sig.name, returnType, toList(typeParams), toList(params), toList(thrown), bodyBlock, null), annotation);
 	}
 	
 	public static <T> com.sun.tools.javac.util.List<T> toList(ListBuffer<T> collection) {
@@ -389,10 +390,11 @@ public class HandleDelegate extends JavacAnnotationHandler<Delegate> {
 			boolean isDeprecated = (member.flags() & DEPRECATED) != 0;
 			signatures.add(new MethodSig(member.name, methodType, isDeprecated, exElem));
 		}
-		
-		if (ct.supertype_field instanceof ClassType) addMethodBindings(signatures, (ClassType) ct.supertype_field, types, banList);
-		if (ct.interfaces_field != null) for (Type iface : ct.interfaces_field) {
-			if (iface instanceof ClassType) addMethodBindings(signatures, (ClassType) iface, types, banList);
+
+		for (Type type : types.directSupertypes(ct)) {
+			if (type instanceof ClassType) {
+				addMethodBindings(signatures, (ClassType) type, types, banList);
+			}
 		}
 	}
 	
@@ -464,7 +466,7 @@ public class HandleDelegate extends JavacAnnotationHandler<Delegate> {
 		static {
 			Method m = null;
 			try {
-				m = Type.class.getDeclaredMethod("unannotatedType");
+				m = Permit.getMethod(Type.class, "unannotatedType");
 			} catch (Exception e) {/* ignore */}
 			unannotated = m;
 		}
@@ -472,7 +474,7 @@ public class HandleDelegate extends JavacAnnotationHandler<Delegate> {
 		static Type unannotatedType(Type t) {
 			if (unannotated == null) return t;
 			try {
-				return (Type) unannotated.invoke(t);
+				return (Type) Permit.invoke(unannotated, t);
 			} catch (Exception e) {
 				return t;
 			}

@@ -1,3 +1,4 @@
+//skip-idempotent
 import java.util.List;
 class BuilderSingularNoAutoWithSetterPrefix {
 	private List<String> things;

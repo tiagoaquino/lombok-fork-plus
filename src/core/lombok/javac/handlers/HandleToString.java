@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2020 The Project Lombok Authors.
+ * Copyright (C) 2009-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -38,15 +38,12 @@ import lombok.core.handlers.InclusionExclusionUtils.Included;
 import lombok.javac.JavacAnnotationHandler;
 import lombok.javac.JavacNode;
 import lombok.javac.JavacTreeMaker;
-
-import org.mangosdk.spi.ProviderFor;
+import lombok.spi.Provides;
 
 import com.sun.tools.javac.code.Flags;
-import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.JCTree.JCAnnotation;
 import com.sun.tools.javac.tree.JCTree.JCArrayTypeTree;
 import com.sun.tools.javac.tree.JCTree.JCBlock;
-import com.sun.tools.javac.tree.JCTree.JCClassDecl;
 import com.sun.tools.javac.tree.JCTree.JCExpression;
 import com.sun.tools.javac.tree.JCTree.JCMethodDecl;
 import com.sun.tools.javac.tree.JCTree.JCMethodInvocation;
@@ -60,7 +57,7 @@ import com.sun.tools.javac.util.List;
 /**
  * Handles the {@code ToString} annotation for javac.
  */
-@ProviderFor(JavacAnnotationHandler.class)
+@Provides
 public class HandleToString extends JavacAnnotationHandler<ToString> {
 	@Override public void handle(AnnotationValues<ToString> annotation, JCAnnotation ast, JavacNode annotationNode) {
 		handleFlagUsage(annotationNode, ConfigurationKeys.TO_STRING_FLAG_USAGE, "@ToString");
@@ -68,7 +65,8 @@ public class HandleToString extends JavacAnnotationHandler<ToString> {
 		deleteAnnotationIfNeccessary(annotationNode, ToString.class);
 		
 		ToString ann = annotation.getInstance();
-		java.util.List<Included<JavacNode, ToString.Include>> members = InclusionExclusionUtils.handleToStringMarking(annotationNode.up(), annotation, annotationNode);
+		boolean onlyExplicitlyIncluded = annotationNode.getAst().getBooleanAnnotationValue(annotation, "onlyExplicitlyIncluded", ConfigurationKeys.TO_STRING_ONLY_EXPLICITLY_INCLUDED);
+		java.util.List<Included<JavacNode, ToString.Include>> members = InclusionExclusionUtils.handleToStringMarking(annotationNode.up(), onlyExplicitlyIncluded, annotation, annotationNode);
 		if (members == null) return;
 		
 		Boolean callSuper = ann.callSuper();
@@ -79,10 +77,9 @@ public class HandleToString extends JavacAnnotationHandler<ToString> {
 		boolean doNotUseGetters = annotation.isExplicit("doNotUseGetters") || doNotUseGettersConfiguration == null ? ann.doNotUseGetters() : doNotUseGettersConfiguration;
 		FieldAccess fieldAccess = doNotUseGetters ? FieldAccess.PREFER_FIELD : FieldAccess.GETTER;
 		
-		Boolean fieldNamesConfiguration = annotationNode.getAst().readConfiguration(ConfigurationKeys.TO_STRING_INCLUDE_FIELD_NAMES);
-		boolean includeNames = annotation.isExplicit("includeFieldNames") || fieldNamesConfiguration == null ? ann.includeFieldNames() : fieldNamesConfiguration;
+		boolean includeFieldNames = annotationNode.getAst().getBooleanAnnotationValue(annotation, "includeFieldNames", ConfigurationKeys.TO_STRING_INCLUDE_FIELD_NAMES);
 		
-		generateToString(annotationNode.up(), annotationNode, members, includeNames, callSuper, true, fieldAccess);
+		generateToString(annotationNode.up(), annotationNode, members, includeFieldNames, callSuper, true, fieldAccess);
 	}
 	
 	public void generateToStringForType(JavacNode typeNode, JavacNode errorNode) {
@@ -91,29 +88,21 @@ public class HandleToString extends JavacAnnotationHandler<ToString> {
 			return;
 		}
 		
-		boolean includeFieldNames = true;
-		try {
-			Boolean configuration = typeNode.getAst().readConfiguration(ConfigurationKeys.TO_STRING_INCLUDE_FIELD_NAMES);
-			includeFieldNames = configuration != null ? configuration : ((Boolean) ToString.class.getMethod("includeFieldNames").getDefaultValue()).booleanValue();
-		} catch (Exception ignore) {}
+		AnnotationValues<ToString> anno = AnnotationValues.of(ToString.class);
+		boolean includeFieldNames = typeNode.getAst().getBooleanAnnotationValue(anno, "includeFieldNames", ConfigurationKeys.TO_STRING_INCLUDE_FIELD_NAMES);
+		boolean onlyExplicitlyIncluded = typeNode.getAst().getBooleanAnnotationValue(anno, "onlyExplicitlyIncluded", ConfigurationKeys.TO_STRING_ONLY_EXPLICITLY_INCLUDED);
 		
 		Boolean doNotUseGettersConfiguration = typeNode.getAst().readConfiguration(ConfigurationKeys.TO_STRING_DO_NOT_USE_GETTERS);
 		FieldAccess access = doNotUseGettersConfiguration == null || !doNotUseGettersConfiguration ? FieldAccess.GETTER : FieldAccess.PREFER_FIELD;
 		
-		java.util.List<Included<JavacNode, ToString.Include>> members = InclusionExclusionUtils.handleToStringMarking(typeNode, null, null);
+		java.util.List<Included<JavacNode, ToString.Include>> members = InclusionExclusionUtils.handleToStringMarking(typeNode, onlyExplicitlyIncluded, null, null);
 		generateToString(typeNode, errorNode, members, includeFieldNames, null, false, access);
 	}
 	
 	public void generateToString(JavacNode typeNode, JavacNode source, java.util.List<Included<JavacNode, ToString.Include>> members,
 		boolean includeFieldNames, Boolean callSuper, boolean whineIfExists, FieldAccess fieldAccess) {
 		
-		boolean notAClass = true;
-		if (typeNode.get() instanceof JCClassDecl) {
-			long flags = ((JCClassDecl) typeNode.get()).mods.flags;
-			notAClass = (flags & (Flags.INTERFACE | Flags.ANNOTATION)) != 0;
-		}
-		
-		if (notAClass) {
+		if (!isClassOrEnum(typeNode)) {
 			source.addError("@ToString is only supported on a class or enum.");
 			return;
 		}
@@ -141,7 +130,7 @@ public class HandleToString extends JavacAnnotationHandler<ToString> {
 					}
 				}
 			}
-			JCMethodDecl method = createToString(typeNode, members, includeFieldNames, callSuper, fieldAccess, source.get());
+			JCMethodDecl method = createToString(typeNode, members, includeFieldNames, callSuper, fieldAccess, source);
 			injectMethod(typeNode, method);
 			break;
 		case EXISTS_BY_LOMBOK:
@@ -156,7 +145,7 @@ public class HandleToString extends JavacAnnotationHandler<ToString> {
 	}
 	
 	static JCMethodDecl createToString(JavacNode typeNode, Collection<Included<JavacNode, ToString.Include>> members,
-		boolean includeNames, boolean callSuper, FieldAccess fieldAccess, JCTree source) {
+		boolean includeNames, boolean callSuper, FieldAccess fieldAccess, JavacNode source) {
 		
 		JavacTreeMaker maker = typeNode.getTreeMaker();
 		
@@ -256,14 +245,14 @@ public class HandleToString extends JavacAnnotationHandler<ToString> {
 		JCMethodDecl methodDef = maker.MethodDef(mods, typeNode.toName("toString"), returnType,
 			List.<JCTypeParameter>nil(), List.<JCVariableDecl>nil(), List.<JCExpression>nil(), body, null);
 		createRelevantNonNullAnnotation(typeNode, methodDef);
-		return recursiveSetGeneratedBy(methodDef, source, typeNode.getContext());
+		return recursiveSetGeneratedBy(methodDef, source);
 	}
 	
 	public static String getTypeName(JavacNode typeNode) {
-		String typeName = ((JCClassDecl) typeNode.get()).name.toString();
+		String typeName = typeNode.getName();
 		JavacNode upType = typeNode.up();
-		while (upType.getKind() == Kind.TYPE) {
-			typeName = ((JCClassDecl) upType.get()).name.toString() + "." + typeName;
+		while (upType.getKind() == Kind.TYPE && !upType.getName().isEmpty()) {
+			typeName = upType.getName() + "." + typeName;
 			upType = upType.up();
 		}
 		return typeName;

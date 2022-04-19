@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2020 The Project Lombok Authors.
+ * Copyright (C) 2015-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -50,7 +50,6 @@ import org.eclipse.jdt.internal.compiler.ast.Statement;
 import org.eclipse.jdt.internal.compiler.ast.ThisReference;
 import org.eclipse.jdt.internal.compiler.ast.TypeReference;
 import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
-import org.mangosdk.spi.ProviderFor;
 
 import lombok.AccessLevel;
 import lombok.core.LombokImmutableList;
@@ -62,8 +61,9 @@ import lombok.eclipse.handlers.EclipseSingularsRecipes.SingularData;
 import lombok.eclipse.handlers.EclipseSingularsRecipes.StatementMaker;
 import lombok.eclipse.handlers.EclipseSingularsRecipes.TypeReferenceMaker;
 import lombok.eclipse.handlers.HandleNonNull;
+import lombok.spi.Provides;
 
-@ProviderFor(EclipseSingularizer.class)
+@Provides(EclipseSingularizer.class)
 public class EclipseJavaUtilMapSingularizer extends EclipseJavaUtilSingularizer {
 	@Override public LombokImmutableList<String> getSupportedTypes() {
 		return LombokImmutableList.of("java.util.Map", "java.util.SortedMap", "java.util.NavigableMap");
@@ -177,7 +177,7 @@ public class EclipseJavaUtilMapSingularizer extends EclipseJavaUtilSingularizer 
 		thisDotField2.receiver = new ThisReference(0, 0);
 		FieldReference thisDotField3 = new FieldReference(valueFieldName, 0L);
 		thisDotField3.receiver = new ThisReference(0, 0);
-		md.selector = HandlerUtil.buildAccessorName("clear", new String(data.getPluralName())).toCharArray();
+		md.selector = HandlerUtil.buildAccessorName(builderType, "clear", new String(data.getPluralName())).toCharArray();
 		MessageSend clearMsg1 = new MessageSend();
 		clearMsg1.receiver = thisDotField2;
 		clearMsg1.selector = "clear".toCharArray();
@@ -189,7 +189,8 @@ public class EclipseJavaUtilMapSingularizer extends EclipseJavaUtilSingularizer 
 		Statement clearStatement = new IfStatement(new EqualExpression(thisDotField, new NullLiteral(0, 0), OperatorIds.NOT_EQUAL), clearMsgs, 0, 0);
 		md.statements = returnStatement != null ? new Statement[] {clearStatement, returnStatement} : new Statement[] {clearStatement};
 		md.returnType = returnType;
-		md.annotations = generateSelfReturnAnnotations(deprecate, cfv, data.getSource());
+		addCheckerFrameworkReturnsReceiver(md.returnType, data.getSource(), cfv);
+		md.annotations = generateSelfReturnAnnotations(deprecate, data.getSource());
 		
 		if (returnStatement != null) createRelevantNonNullAnnotation(builderType, md);
 		data.setGeneratedByRecursive(md);
@@ -246,13 +247,16 @@ public class EclipseJavaUtilMapSingularizer extends EclipseJavaUtilSingularizer 
 		valueParam.annotations = typeUseAnnsValue;
 		md.arguments = new Argument[] {keyParam, valueParam};
 		md.returnType = returnType;
+		addCheckerFrameworkReturnsReceiver(md.returnType, data.getSource(), cfv);
 		
 		String name = new String(data.getSingularName());
 		String setterPrefix = data.getSetterPrefix().length > 0 ? new String(data.getSetterPrefix()) : fluent ? "" : "put";
-		String setterName = HandlerUtil.buildAccessorName(setterPrefix, name);
+		String setterName = HandlerUtil.buildAccessorName(builderType, setterPrefix, name);
 		
 		md.selector = setterName.toCharArray();
-		md.annotations = generateSelfReturnAnnotations(deprecate, cfv, data.getSource());
+		Annotation[] selfReturnAnnotations = generateSelfReturnAnnotations(deprecate, data.getSource());
+		Annotation[] copyToSetterAnnotations = copyAnnotations(md, findCopyableToBuilderSingularSetterAnnotations(data.getAnnotation().up()));
+		md.annotations = concat(selfReturnAnnotations, copyToSetterAnnotations, Annotation.class);
 		
 		if (returnStatement != null) createRelevantNonNullAnnotation(builderType, md);
 		data.setGeneratedByRecursive(md);
@@ -312,7 +316,7 @@ public class EclipseJavaUtilMapSingularizer extends EclipseJavaUtilSingularizer 
 		paramType = addTypeArgs(2, true, builderType, paramType, data.getTypeArgs());
 		Argument param = new Argument(data.getPluralName(), 0, paramType, ClassFileConstants.AccFinal);
 		
-		nullBehaviorize(builderType, data, statements, param);
+		nullBehaviorize(builderType, data, statements, param, md);
 		
 		if (returnStatement != null) statements.add(returnStatement);
 		
@@ -320,13 +324,16 @@ public class EclipseJavaUtilMapSingularizer extends EclipseJavaUtilSingularizer 
 		
 		md.arguments = new Argument[] {param};
 		md.returnType = returnType;
+		addCheckerFrameworkReturnsReceiver(md.returnType, data.getSource(), cfv);
 		
 		String name = new String(data.getPluralName());
 		String setterPrefix = data.getSetterPrefix().length > 0 ? new String(data.getSetterPrefix()) : fluent ? "" : "put";
-		String setterName = HandlerUtil.buildAccessorName(setterPrefix, name);
+		String setterName = HandlerUtil.buildAccessorName(builderType, setterPrefix, name);
 		
 		md.selector = setterName.toCharArray();
-		md.annotations = generateSelfReturnAnnotations(deprecate, cfv, data.getSource());
+		Annotation[] selfReturnAnnotations = generateSelfReturnAnnotations(deprecate, data.getSource());
+		Annotation[] copyToSetterAnnotations = copyAnnotations(md, findCopyableToSetterAnnotations(data.getAnnotation().up()));
+		md.annotations = concat(selfReturnAnnotations, copyToSetterAnnotations, Annotation.class);
 		
 		if (returnStatement != null) createRelevantNonNullAnnotation(builderType, md);
 		data.setGeneratedByRecursive(md);
@@ -344,5 +351,9 @@ public class EclipseJavaUtilMapSingularizer extends EclipseJavaUtilSingularizer 
 		} else {
 			statements.addAll(createJavaUtilSimpleCreationAndFillStatements(data, builderType, true, true, false, true, "TreeMap", builderVariable));
 		}
+	}
+	
+	@Override protected int getTypeArgumentsCount() {
+		return 2;
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2013 The Project Lombok Authors.
+ * Copyright (C) 2009-2022 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -165,7 +165,7 @@ public class AnnotationValues<A extends Annotation> {
 		AnnotationValue v = values.get(methodName);
 		
 		if (v == null) {
-			String[] s = getDefaultIf(methodName, String[].class, new String[0]);
+			String[] s = getDefaultIf(methodName, new String[0]);
 			return Collections.unmodifiableList(Arrays.asList(s));
 		}
 		
@@ -175,7 +175,7 @@ public class AnnotationValues<A extends Annotation> {
 			Object result = guess == null ? null : guessToType(guess, String.class, v, idx);
 			if (result == null) {
 				if (v.valueGuesses.size() == 1) {
-					String[] s = getDefaultIf(methodName, String[].class, new String[0]);
+					String[] s = getDefaultIf(methodName, new String[0]);
 					return Collections.unmodifiableList(Arrays.asList(s));
 				} 
 				throw new AnnotationValueDecodeFail(v, 
@@ -190,28 +190,29 @@ public class AnnotationValues<A extends Annotation> {
 	public String getAsString(String methodName) {
 		AnnotationValue v = values.get(methodName);
 		if (v == null || v.valueGuesses.size() != 1) {
-			return getDefaultIf(methodName, String.class, "");
+			return getDefaultIf(methodName, "");
 		}
 		
 		Object guess = guessToType(v.valueGuesses.get(0), String.class, v, 0);
 		if (guess instanceof String) return (String) guess;
-		return getDefaultIf(methodName, String.class, "");
+		return getDefaultIf(methodName, "");
 	}
 	
 	public boolean getAsBoolean(String methodName) {
 		AnnotationValue v = values.get(methodName);
 		if (v == null || v.valueGuesses.size() != 1) {
-			return getDefaultIf(methodName, boolean.class, false);
+			return getDefaultIf(methodName, false);
 		}
 		
 		Object guess = guessToType(v.valueGuesses.get(0), boolean.class, v, 0);
 		if (guess instanceof Boolean) return ((Boolean) guess).booleanValue();
-		return getDefaultIf(methodName, boolean.class, false);
+		return getDefaultIf(methodName, false);
 	}
 	
-	public <T> T getDefaultIf(String methodName, Class<T> type, T defaultValue) {
+	@SuppressWarnings("unchecked")
+	public <T> T getDefaultIf(String methodName, T defaultValue) {
 		try {
-			return type.cast(Permit.getMethod(type, methodName).getDefaultValue());
+			return (T) Permit.getMethod(type, methodName).getDefaultValue();
 		} catch (Exception e) {
 			return defaultValue;
 		}
@@ -411,6 +412,14 @@ public class AnnotationValues<A extends Annotation> {
 		List<Object> l = getActualExpressions(annotationMethodName);
 		return l.isEmpty() ? null : l.get(0);
 	}
+
+	/**
+	 * Returns the guessed value for the provided {@code annotationMethodName}.
+	 */
+	public Object getValueGuess(String annotationMethodName) {
+		AnnotationValue v = values.get(annotationMethodName);
+		return v == null || v.valueGuesses.isEmpty() ? null : v.valueGuesses.get(0);
+	}
 	
 	/** Generates an error message on the stated annotation value (you should only call this method if you know it's there!) */
 	public void setError(String annotationMethodName, String message) {
@@ -540,5 +549,26 @@ public class AnnotationValues<A extends Annotation> {
 		if (result.length() > 0) result.append('.');
 		result.append(typeName);
 		return result.toString();
+	}
+	
+	/**
+	 * Creates an amalgamation where any values in this AnnotationValues that aren't explicit are 'enriched' by explicitly set stuff from {@code defaults}.
+	 * Note that this code may modify self and then returns self, or it returns defaults - do not rely on immutability nor on getting self.
+	 */
+	public AnnotationValues<A> integrate(AnnotationValues<A> defaults) {
+		if (values.isEmpty()) return defaults;
+		for (Map.Entry<String, AnnotationValue> entry : defaults.values.entrySet()) {
+			if (!entry.getValue().isExplicit) continue;
+			AnnotationValue existingValue = values.get(entry.getKey());
+			if (existingValue != null && existingValue.isExplicit) continue;
+			values.put(entry.getKey(), entry.getValue());
+		}
+		return this;
+	}
+	
+	/** Returns {@code true} if the annotation has zero parameters. */
+	public boolean isMarking() {
+		for (AnnotationValue v : values.values()) if (v.isExplicit) return false;
+		return true;
 	}
 }

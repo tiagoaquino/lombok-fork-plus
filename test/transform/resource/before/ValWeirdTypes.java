@@ -1,3 +1,4 @@
+// version 8:9 In java6/7, lub types worked differently, so, the `arraysAsList` method has a slightly different inferred type there.
 import java.math.BigDecimal;
 import java.util.*;
 import lombok.val;
@@ -44,6 +45,7 @@ public class ValWeirdTypes<Z> {
 		val d = upper;
 		List<?> unbound = lower;
 		val e = unbound;
+		val f = unbound.get(0);
 	}
 	
 	public void testCompound() {

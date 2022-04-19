@@ -65,7 +65,7 @@ public class HandlerLibrary {
 	
 	/**
 	 * Creates a new HandlerLibrary that will report any problems or errors to the provided messager.
-	 * You probably want to use {@link #load(Messager)} instead.
+	 * You probably want to use {@link #load(Messager, Trees)} instead.
 	 */
 	public HandlerLibrary(Messager messager) {
 		ConfigurationKeysLoader.LoaderLoader.loadAllConfigurationKeys();
@@ -104,13 +104,13 @@ public class HandlerLibrary {
 			this.handler = handler;
 			this.annotationClass = annotationClass;
 			HandlerPriority hp = handler.getClass().getAnnotation(HandlerPriority.class);
-			this.priority = hp == null ? 0L : (((long)hp.value()) << 32) + hp.subValue();
+			this.priority = hp == null ? 0L : (((long) hp.value()) << 32) + hp.subValue();
 			this.resolutionResetNeeded = handler.getClass().isAnnotationPresent(ResolutionResetNeeded.class);
 			this.evenIfAlreadyHandled = handler.getClass().isAnnotationPresent(AlreadyHandledAnnotations.class);
 		}
 		
 		public void handle(final JavacNode node) {
-			handler.handle(JavacHandlerUtil.createAnnotation(annotationClass, node), (JCAnnotation)node.get(), node);
+			handler.handle(JavacHandlerUtil.createAnnotation(annotationClass, node), (JCAnnotation) node.get(), node);
 		}
 		
 		public long getPriority() {

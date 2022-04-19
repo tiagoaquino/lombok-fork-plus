@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2020 The Project Lombok Authors.
+ * Copyright (C) 2015-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -93,7 +93,7 @@ abstract class EclipseGuavaSingularizer extends EclipseSingularizer {
 	}
 	
 	@Override protected char[][] getEmptyMakerReceiver(String targetFqn) {
-		return CGCC;
+		return makeGuavaTypeName(GuavaTypeMap.getGuavaTypeName(targetFqn), false);
 	}
 	
 	@Override public List<EclipseNode> generateFields(SingularData data, EclipseNode builderType) {
@@ -126,16 +126,17 @@ abstract class EclipseGuavaSingularizer extends EclipseSingularizer {
 		FieldReference thisDotField = new FieldReference(data.getPluralName(), 0L);
 		thisDotField.receiver = new ThisReference(0, 0);
 		Assignment a = new Assignment(thisDotField, new NullLiteral(0, 0), 0);
-		md.selector = HandlerUtil.buildAccessorName("clear", new String(data.getPluralName())).toCharArray();
+		md.selector = HandlerUtil.buildAccessorName(builderType, "clear", new String(data.getPluralName())).toCharArray();
 		md.statements = returnStatement != null ? new Statement[] {a, returnStatement} : new Statement[] {a};
 		md.returnType = returnType;
-		md.annotations = generateSelfReturnAnnotations(deprecate, cfv, data.getSource());
+		addCheckerFrameworkReturnsReceiver(md.returnType, data.getSource(), cfv);
+		md.annotations = generateSelfReturnAnnotations(deprecate, data.getSource());
 		
 		data.setGeneratedByRecursive(md);
 		if (returnStatement != null) createRelevantNonNullAnnotation(builderType, md);
 		injectMethod(builderType, md);
 	}
-	
+
 	void generateSingularMethod(CheckerFrameworkVersion cfv, boolean deprecate, TypeReference returnType, Statement returnStatement, SingularData data, EclipseNode builderType, boolean fluent, AccessLevel access) {
 		LombokImmutableList<String> suffixes = getArgumentSuffixes();
 		char[][] names = new char[suffixes.size()][];
@@ -173,10 +174,13 @@ abstract class EclipseGuavaSingularizer extends EclipseSingularizer {
 			md.arguments[i].annotations = typeUseAnns;
 		}
 		md.returnType = returnType;
-		char[] prefixedSingularName = data.getSetterPrefix().length == 0 ? data.getSingularName() : HandlerUtil.buildAccessorName(new String(data.getSetterPrefix()), new String(data.getSingularName())).toCharArray();
-		md.selector = fluent ? prefixedSingularName : HandlerUtil.buildAccessorName("add", new String(data.getSingularName())).toCharArray();
-		md.annotations = generateSelfReturnAnnotations(deprecate, cfv, data.getSource());
-		
+		addCheckerFrameworkReturnsReceiver(md.returnType, data.getSource(), cfv);
+		char[] prefixedSingularName = data.getSetterPrefix().length == 0 ? data.getSingularName() : HandlerUtil.buildAccessorName(builderType, new String(data.getSetterPrefix()), new String(data.getSingularName())).toCharArray();
+		md.selector = fluent ? prefixedSingularName : HandlerUtil.buildAccessorName(builderType, "add", new String(data.getSingularName())).toCharArray();
+		Annotation[] selfReturnAnnotations = generateSelfReturnAnnotations(deprecate, data.getSource());
+		Annotation[] copyToSetterAnnotations = copyAnnotations(md, findCopyableToBuilderSingularSetterAnnotations(data.getAnnotation().up()));
+		md.annotations = concat(selfReturnAnnotations, copyToSetterAnnotations, Annotation.class);
+
 		if (returnStatement != null) createRelevantNonNullAnnotation(builderType, md);
 		data.setGeneratedByRecursive(md);
 		HandleNonNull.INSTANCE.fix(injectMethod(builderType, md));
@@ -203,7 +207,7 @@ abstract class EclipseGuavaSingularizer extends EclipseSingularizer {
 		paramType = addTypeArgs(getTypeArgumentsCount(), true, builderType, paramType, data.getTypeArgs());
 		Argument param = new Argument(data.getPluralName(), 0, paramType, ClassFileConstants.AccFinal);
 		
-		nullBehaviorize(builderType, data, statements, param);
+		nullBehaviorize(builderType, data, statements, param, md);
 		
 		if (returnStatement != null) statements.add(returnStatement);
 		
@@ -211,10 +215,13 @@ abstract class EclipseGuavaSingularizer extends EclipseSingularizer {
 		
 		md.arguments = new Argument[] {param};
 		md.returnType = returnType;
-		char[] prefixedSelector = data.getSetterPrefix().length == 0 ? data.getPluralName() : HandlerUtil.buildAccessorName(new String(data.getSetterPrefix()), new String(data.getPluralName())).toCharArray();
-		md.selector = fluent ? prefixedSelector : HandlerUtil.buildAccessorName("addAll", new String(data.getPluralName())).toCharArray();
-		md.annotations = generateSelfReturnAnnotations(deprecate, cfv, data.getSource());
-		
+		addCheckerFrameworkReturnsReceiver(md.returnType, data.getSource(), cfv);
+		char[] prefixedSelector = data.getSetterPrefix().length == 0 ? data.getPluralName() : HandlerUtil.buildAccessorName(builderType, new String(data.getSetterPrefix()), new String(data.getPluralName())).toCharArray();
+		md.selector = fluent ? prefixedSelector : HandlerUtil.buildAccessorName(builderType, "addAll", new String(data.getPluralName())).toCharArray();
+		Annotation[] selfReturnAnnotations = generateSelfReturnAnnotations(deprecate, data.getSource());
+		Annotation[] copyToSetterAnnotations = copyAnnotations(md, findCopyableToSetterAnnotations(data.getAnnotation().up()));
+		md.annotations = concat(selfReturnAnnotations, copyToSetterAnnotations, Annotation.class);
+
 		if (returnStatement != null) createRelevantNonNullAnnotation(builderType, md);
 		data.setGeneratedByRecursive(md);
 		injectMethod(builderType, md);
@@ -275,7 +282,7 @@ abstract class EclipseGuavaSingularizer extends EclipseSingularizer {
 	protected abstract String getAddMethodName();
 	protected abstract String getAddAllTypeName();
 	
-	protected int getTypeArgumentsCount() {
+	@Override protected int getTypeArgumentsCount() {
 		return getArgumentSuffixes().size();
 	}
 }

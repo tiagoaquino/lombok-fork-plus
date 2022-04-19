@@ -1,23 +1,30 @@
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.experimental.Accessors;
 import lombok.With;
-@Data @Accessors(chain = true) class CheckerFrameworkBasic {
+@Data @AllArgsConstructor @Accessors(chain = true) class CheckerFrameworkBasic {
   private final @With int x;
   private final int y;
   private int z;
+  /**
+   * @return {@code this}.
+   */
   public @org.checkerframework.dataflow.qual.SideEffectFree @java.lang.SuppressWarnings("all") CheckerFrameworkBasic withX(final int x) {
     return ((this.x == x) ? this : new CheckerFrameworkBasic(x, this.y, this.z));
   }
-  public @org.checkerframework.dataflow.qual.SideEffectFree @java.lang.SuppressWarnings("all") int getX() {
+  public @org.checkerframework.dataflow.qual.Pure @java.lang.SuppressWarnings("all") int getX() {
     return this.x;
   }
-  public @org.checkerframework.dataflow.qual.SideEffectFree @java.lang.SuppressWarnings("all") int getY() {
+  public @org.checkerframework.dataflow.qual.Pure @java.lang.SuppressWarnings("all") int getY() {
     return this.y;
   }
   public @org.checkerframework.dataflow.qual.SideEffectFree @java.lang.SuppressWarnings("all") int getZ() {
     return this.z;
   }
-  public @org.checkerframework.checker.builder.qual.ReturnsReceiver @java.lang.SuppressWarnings("all") CheckerFrameworkBasic setZ(final int z) {
+  /**
+   * @return {@code this}.
+   */
+  public @java.lang.SuppressWarnings("all") @org.checkerframework.common.returnsreceiver.qual.This CheckerFrameworkBasic setZ(final int z) {
     this.z = z;
     return this;
   }
@@ -37,7 +44,7 @@ import lombok.With;
         return false;
     return true;
   }
-  protected @org.checkerframework.dataflow.qual.SideEffectFree @java.lang.SuppressWarnings("all") boolean canEqual(final java.lang.Object other) {
+  protected @org.checkerframework.dataflow.qual.Pure @java.lang.SuppressWarnings("all") boolean canEqual(final java.lang.Object other) {
     return (other instanceof CheckerFrameworkBasic);
   }
   public @java.lang.Override @org.checkerframework.dataflow.qual.SideEffectFree @java.lang.SuppressWarnings("all") int hashCode() {
@@ -51,9 +58,10 @@ import lombok.With;
   public @java.lang.Override @org.checkerframework.dataflow.qual.SideEffectFree @java.lang.SuppressWarnings("all") java.lang.String toString() {
     return (((((("CheckerFrameworkBasic(x=" + this.getX()) + ", y=") + this.getY()) + ", z=") + this.getZ()) + ")");
   }
-  public @org.checkerframework.common.aliasing.qual.Unique @java.lang.SuppressWarnings("all") CheckerFrameworkBasic(final int x, final int y) {
+  public @java.lang.SuppressWarnings("all") CheckerFrameworkBasic(final int x, final int y, final int z) {
     super();
     this.x = x;
     this.y = y;
+    this.z = z;
   }
 }

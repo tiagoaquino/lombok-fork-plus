@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2014 The Project Lombok Authors.
+ * Copyright (C) 2009-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,6 +22,7 @@
 package lombok.eclipse.handlers;
 
 import static lombok.core.handlers.HandlerUtil.*;
+import static lombok.eclipse.handlers.EclipseHandlerUtil.*;
 
 import java.util.Collections;
 
@@ -32,16 +33,14 @@ import lombok.core.AnnotationValues;
 import lombok.eclipse.EclipseAnnotationHandler;
 import lombok.eclipse.EclipseNode;
 import lombok.eclipse.handlers.HandleConstructor.SkipIfConstructorExists;
+import lombok.spi.Provides;
 
 import org.eclipse.jdt.internal.compiler.ast.Annotation;
-import org.eclipse.jdt.internal.compiler.ast.TypeDeclaration;
-import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
-import org.mangosdk.spi.ProviderFor;
 
 /**
  * Handles the {@code lombok.Data} annotation for eclipse.
  */
-@ProviderFor(EclipseAnnotationHandler.class)
+@Provides
 public class HandleData extends EclipseAnnotationHandler<Data> {
 	private HandleGetter handleGetter = new HandleGetter();
 	private HandleSetter handleSetter = new HandleSetter();
@@ -55,13 +54,7 @@ public class HandleData extends EclipseAnnotationHandler<Data> {
 		Data ann = annotation.getInstance();
 		EclipseNode typeNode = annotationNode.up();
 		
-		TypeDeclaration typeDecl = null;
-		if (typeNode.get() instanceof TypeDeclaration) typeDecl = (TypeDeclaration) typeNode.get();
-		int modifiers = typeDecl == null ? 0 : typeDecl.modifiers;
-		boolean notAClass = (modifiers &
-				(ClassFileConstants.AccInterface | ClassFileConstants.AccAnnotation | ClassFileConstants.AccEnum)) != 0;
-		
-		if (typeDecl == null || notAClass) {
+		if (!isClass(typeNode)) {
 			annotationNode.addError("@Data is only supported on a class.");
 			return;
 		}

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2019 The Project Lombok Authors.
+ * Copyright (C) 2014-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -41,7 +41,6 @@ import org.eclipse.jdt.internal.compiler.ast.StringLiteral;
 import org.eclipse.jdt.internal.compiler.ast.TypeDeclaration;
 import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
 import org.eclipse.jdt.internal.compiler.lookup.TypeConstants;
-import org.mangosdk.spi.ProviderFor;
 
 import lombok.AccessLevel;
 import lombok.ConfigurationKeys;
@@ -54,20 +53,19 @@ import lombok.eclipse.EclipseAnnotationHandler;
 import lombok.eclipse.EclipseNode;
 import lombok.eclipse.handlers.EclipseHandlerUtil.MemberExistsResult;
 import lombok.experimental.FieldNameConstants;
+import lombok.spi.Provides;
 
-@ProviderFor(EclipseAnnotationHandler.class)
+@Provides
 public class HandleFieldNameConstants extends EclipseAnnotationHandler<FieldNameConstants> {
 	private static final IdentifierName FIELDS = IdentifierName.valueOf("Fields");
 
 	public void generateFieldNameConstantsForType(EclipseNode typeNode, EclipseNode errorNode, AccessLevel level, boolean asEnum, IdentifierName innerTypeName, boolean onlyExplicit, boolean uppercase) {
-		TypeDeclaration typeDecl = null;
-		if (typeNode.get() instanceof TypeDeclaration) typeDecl = (TypeDeclaration) typeNode.get();
-		
-		int modifiers = typeDecl == null ? 0 : typeDecl.modifiers;
-		boolean notAClass = (modifiers & (ClassFileConstants.AccInterface | ClassFileConstants.AccAnnotation)) != 0;
-		
-		if (typeDecl == null || notAClass) {
-			errorNode.addError("@FieldNameConstants is only supported on a class or an enum.");
+		if (!isClassEnumOrRecord(typeNode)) {
+			errorNode.addError("@FieldNameConstants is only supported on a class, an enum or a record.");
+			return;
+		}
+		if (!isStaticAllowed(typeNode)) {
+			errorNode.addError("@FieldNameConstants is not supported on non-static nested classes.");
 			return;
 		}
 		
@@ -136,9 +134,8 @@ public class HandleFieldNameConstants extends EclipseAnnotationHandler<FieldName
 		EclipseNode fieldsType = findInnerClass(typeNode, innerTypeName.getName());
 		boolean genConstr = false, genClinit = false;
 		char[] name = innerTypeName.getCharArray();
-		TypeDeclaration generatedInnerType = null;
 		if (fieldsType == null) {
-			generatedInnerType = new TypeDeclaration(parent.compilationResult);
+			TypeDeclaration generatedInnerType = new TypeDeclaration(parent.compilationResult);
 			generatedInnerType.bits |= Eclipse.ECLIPSE_DO_NOT_TOUCH_FLAG;
 			generatedInnerType.modifiers = toEclipseModifier(level) | (asEnum ? ClassFileConstants.AccEnum : (ClassFileConstants.AccStatic | ClassFileConstants.AccFinal));
 			generatedInnerType.name = name;
@@ -172,10 +169,10 @@ public class HandleFieldNameConstants extends EclipseAnnotationHandler<FieldName
 			injectMethod(fieldsType, constructor);
 		}
 		
+		Clinit cli = null;
 		if (genClinit) {
-			Clinit cli = new Clinit(parent.compilationResult);
+			cli = new Clinit(parent.compilationResult);
 			injectMethod(fieldsType, cli);
-			cli.traverse(generatedByVisitor, ((TypeDeclaration) fieldsType.get()).scope);
 		}
 		
 		for (EclipseNode fieldNode : fields) {
@@ -194,6 +191,7 @@ public class HandleFieldNameConstants extends EclipseAnnotationHandler<FieldName
 				ac.sourceEnd = source.sourceEnd;
 				constantField.initialization = ac;
 				constantField.modifiers = 0;
+				((TypeDeclaration) fieldsType.get()).enumConstantsCounter++;
 			} else {
 				constantField.type = new QualifiedTypeReference(TypeConstants.JAVA_LANG_STRING, new long[] {p, p, p});
 				constantField.initialization = new StringLiteral(field.name, pS, pE, 0);
@@ -201,6 +199,10 @@ public class HandleFieldNameConstants extends EclipseAnnotationHandler<FieldName
 			}
 			injectField(fieldsType, constantField);
 			constantField.traverse(generatedByVisitor, ((TypeDeclaration) fieldsType.get()).initializerScope);
+		}
+		
+		if (genClinit) {
+			cli.traverse(generatedByVisitor, ((TypeDeclaration) fieldsType.get()).scope);
 		}
 	}
 }

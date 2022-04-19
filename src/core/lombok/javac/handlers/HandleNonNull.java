@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 The Project Lombok Authors.
+ * Copyright (C) 2013-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,13 +27,16 @@ import static lombok.javac.JavacTreeMaker.TreeTag.treeTag;
 import static lombok.javac.JavacTreeMaker.TypeTag.typeTag;
 import static lombok.javac.handlers.JavacHandlerUtil.*;
 
-import org.mangosdk.spi.ProviderFor;
+import java.util.ArrayList;
 
+import com.sun.tools.javac.code.Flags;
+import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.JCTree.JCAnnotation;
 import com.sun.tools.javac.tree.JCTree.JCAssert;
 import com.sun.tools.javac.tree.JCTree.JCAssign;
 import com.sun.tools.javac.tree.JCTree.JCBinary;
 import com.sun.tools.javac.tree.JCTree.JCBlock;
+import com.sun.tools.javac.tree.JCTree.JCClassDecl;
 import com.sun.tools.javac.tree.JCTree.JCExpression;
 import com.sun.tools.javac.tree.JCTree.JCExpressionStatement;
 import com.sun.tools.javac.tree.JCTree.JCFieldAccess;
@@ -42,15 +45,19 @@ import com.sun.tools.javac.tree.JCTree.JCIf;
 import com.sun.tools.javac.tree.JCTree.JCLiteral;
 import com.sun.tools.javac.tree.JCTree.JCMethodDecl;
 import com.sun.tools.javac.tree.JCTree.JCMethodInvocation;
+import com.sun.tools.javac.tree.JCTree.JCModifiers;
 import com.sun.tools.javac.tree.JCTree.JCParens;
 import com.sun.tools.javac.tree.JCTree.JCStatement;
 import com.sun.tools.javac.tree.JCTree.JCSynchronized;
 import com.sun.tools.javac.tree.JCTree.JCThrow;
 import com.sun.tools.javac.tree.JCTree.JCTry;
+import com.sun.tools.javac.tree.JCTree.JCTypeParameter;
 import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
 import com.sun.tools.javac.util.List;
+import com.sun.tools.javac.util.ListBuffer;
 import com.sun.tools.javac.util.Name;
 
+import lombok.AccessLevel;
 import lombok.ConfigurationKeys;
 import lombok.NonNull;
 import lombok.core.AST.Kind;
@@ -58,68 +65,115 @@ import lombok.core.AnnotationValues;
 import lombok.core.HandlerPriority;
 import lombok.javac.JavacAnnotationHandler;
 import lombok.javac.JavacNode;
+import lombok.javac.JavacTreeMaker;
+import lombok.spi.Provides;
 
-@ProviderFor(JavacAnnotationHandler.class)
+@Provides
 @HandlerPriority(value = 512) // 2^9; onParameter=@__(@NonNull) has to run first.
 public class HandleNonNull extends JavacAnnotationHandler<NonNull> {
-	@Override public void handle(AnnotationValues<NonNull> annotation, JCAnnotation ast, JavacNode annotationNode) {
-		handleFlagUsage(annotationNode, ConfigurationKeys.NON_NULL_FLAG_USAGE, "@NonNull");
+	private JCMethodDecl createRecordArgslessConstructor(JavacNode typeNode, JavacNode source, JCMethodDecl existingCtr) {
+		JavacTreeMaker maker = typeNode.getTreeMaker();
 		
-		if (annotationNode.up().getKind() == Kind.FIELD) {
-			// This is meaningless unless the field is used to generate a method (@Setter, @RequiredArgsConstructor, etc),
-			// but in that case those handlers will take care of it. However, we DO check if the annotation is applied to
-			// a primitive, because those handlers trigger on any annotation named @NonNull and we only want the warning
-			// behaviour on _OUR_ 'lombok.NonNull'.
-			
-			try {
-				if (isPrimitive(((JCVariableDecl) annotationNode.up().get()).vartype)) {
-					annotationNode.addWarning("@NonNull is meaningless on a primitive.");
+		java.util.List<JCVariableDecl> fields = new ArrayList<JCVariableDecl>();
+		for (JavacNode child : typeNode.down()) {
+			if (child.getKind() == Kind.FIELD) {
+				JCVariableDecl v = (JCVariableDecl) child.get();
+				if ((v.mods.flags & RECORD) != 0) {
+					fields.add(v);
 				}
-			} catch (Exception ignore) {}
-			
-			return;
+			}
 		}
 		
-		JCMethodDecl declaration;
-		JavacNode paramNode;
+		ListBuffer<JCVariableDecl> params = new ListBuffer<JCVariableDecl>();
 		
-		switch (annotationNode.up().getKind()) {
-		case ARGUMENT:
-			paramNode = annotationNode.up();
-			break;
-		case TYPE_USE:
-			JavacNode typeNode = annotationNode.directUp();
-			paramNode = typeNode.directUp();
-			break;
-		default:
-			return;
+		for (int i = 0; i < fields.size(); i++) {
+			JCVariableDecl arg = fields.get(i);
+			JCModifiers mods = maker.Modifiers(GENERATED_MEMBER | Flags.PARAMETER, arg.mods.annotations);
+			params.append(maker.VarDef(mods, arg.name, arg.vartype, null));
 		}
 		
-		if (paramNode.getKind() != Kind.ARGUMENT) return;
-		try {
-			declaration = (JCMethodDecl) paramNode.up().get();
-		} catch (Exception e) {
-			return;
+		JCModifiers mods = maker.Modifiers(toJavacModifier(AccessLevel.PUBLIC) | COMPACT_RECORD_CONSTRUCTOR, List.<JCAnnotation>nil());
+		JCBlock body = maker.Block(0L, List.<JCStatement>nil());
+		if (existingCtr == null) {
+			JCMethodDecl constr = maker.MethodDef(mods, typeNode.toName("<init>"), null, List.<JCTypeParameter>nil(), params.toList(), List.<JCExpression>nil(), body, null);
+			return recursiveSetGeneratedBy(constr, source);
+		} else {
+			existingCtr.mods = mods;
+			existingCtr.body = body;
+			existingCtr = recursiveSetGeneratedBy(existingCtr, source);
+			addSuppressWarningsAll(existingCtr.mods, typeNode, typeNode.getNodeFor(getGeneratedBy(existingCtr)), typeNode.getContext());
+			addGenerated(existingCtr.mods, typeNode, typeNode.getNodeFor(getGeneratedBy(existingCtr)), typeNode.getContext());
+			return existingCtr;
+		}
+	}
+	
+	/**
+	 * If the provided typeNode is a record, returns the compact constructor (there should only be one, but if the file is
+	 * not semantically sound there might be more). If the only one in existence is the default auto-generated one, it is removed,
+	 * a new explicit one is created, and that one is returned in a list.
+	 * 
+	 * Otherwise, an empty list is returned.
+	 */
+	private List<JCMethodDecl> addCompactConstructorIfNeeded(JavacNode typeNode, JavacNode source) {
+		List<JCMethodDecl> answer = List.nil();
+		
+		if (typeNode == null || !(typeNode.get() instanceof JCClassDecl)) return answer;
+		
+		JCClassDecl cDecl = (JCClassDecl) typeNode.get();
+		if ((cDecl.mods.flags & RECORD) == 0) return answer;
+		
+		boolean generateConstructor = false;
+		
+		JCMethodDecl existingCtr = null;
+		
+		for (JCTree def : cDecl.defs) {
+			if (def instanceof JCMethodDecl) {
+				JCMethodDecl md = (JCMethodDecl) def;
+				if (md.name.contentEquals("<init>")) {
+					if ((md.mods.flags & Flags.GENERATEDCONSTR) != 0) {
+						existingCtr = md;
+						existingCtr.mods.flags = existingCtr.mods.flags & ~Flags.GENERATEDCONSTR;
+						generateConstructor = true;
+					} else {
+						if (!isTolerate(typeNode, md)) {
+							if ((md.mods.flags & COMPACT_RECORD_CONSTRUCTOR) != 0) {
+								generateConstructor = false;
+								answer = answer.prepend(md);
+							}
+						}
+					}
+				}
+			}
 		}
 		
-		if (declaration.body == null) {
-			// This used to be a warning, but as @NonNull also has a documentary purpose, better to not warn about this. Since 1.16.7
-			return;
+		if (generateConstructor) {
+			JCMethodDecl ctr;
+			if (existingCtr != null) {
+				ctr = createRecordArgslessConstructor(typeNode, source, existingCtr);
+			} else {
+				ctr = createRecordArgslessConstructor(typeNode, source, null);
+				injectMethod(typeNode, ctr);
+			}
+			answer = answer.prepend(ctr);
 		}
 		
+		return answer;
+	}
+	
+	private void addNullCheckIfNeeded(JCMethodDecl method, JavacNode paramNode, JavacNode source) {
 		// Possibly, if 'declaration instanceof ConstructorDeclaration', fetch declaration.constructorCall, search it for any references to our parameter,
 		// and if they exist, create a new method in the class: 'private static <T> T lombok$nullCheck(T expr, String msg) {if (expr == null) throw NPE; return expr;}' and
 		// wrap all references to it in the super/this to a call to this method.
 		
-		JCStatement nullCheck = recursiveSetGeneratedBy(generateNullCheck(annotationNode.getTreeMaker(), paramNode, annotationNode), ast, annotationNode.getContext());
+		JCStatement nullCheck = recursiveSetGeneratedBy(generateNullCheck(source.getTreeMaker(), paramNode, source), source);
 		
 		if (nullCheck == null) {
 			// @NonNull applied to a primitive. Kinda pointless. Let's generate a warning.
-			annotationNode.addWarning("@NonNull is meaningless on a primitive.");
+			source.addWarning("@NonNull is meaningless on a primitive.");
 			return;
 		}
 		
-		List<JCStatement> statements = declaration.body.stats;
+		List<JCStatement> statements = method.body.stats;
 		
 		String expectedName = paramNode.getName();
 		
@@ -158,8 +212,71 @@ public class HandleNonNull extends JavacAnnotationHandler<NonNull> {
 		
 		List<JCStatement> newList = tail.prepend(nullCheck);
 		for (JCStatement stat : head) newList = newList.prepend(stat);
-		declaration.body.stats = newList;
-		annotationNode.getAst().setChanged();
+		method.body.stats = newList;
+		source.getAst().setChanged();
+	}
+	
+	@Override public void handle(AnnotationValues<NonNull> annotation, JCAnnotation ast, JavacNode annotationNode) {
+		handleFlagUsage(annotationNode, ConfigurationKeys.NON_NULL_FLAG_USAGE, "@NonNull");
+		if (annotationNode.up().getKind() == Kind.FIELD) {
+			// This is meaningless unless the field is used to generate a method (@Setter, @RequiredArgsConstructor, etc),
+			// but in that case those handlers will take care of it. However, we DO check if the annotation is applied to
+			// a primitive, because those handlers trigger on any annotation named @NonNull and we only want the warning
+			// behaviour on _OUR_ 'lombok.NonNull'.
+			
+			try {
+				if (isPrimitive(((JCVariableDecl) annotationNode.up().get()).vartype)) {
+					annotationNode.addWarning("@NonNull is meaningless on a primitive.");
+				}
+			} catch (Exception ignore) {}
+			
+			JCVariableDecl fDecl = (JCVariableDecl) annotationNode.up().get();
+			if ((fDecl.mods.flags & RECORD) != 0) {
+				// well, these kinda double as parameters (of the compact constructor), so we do some work here.
+				
+				List<JCMethodDecl> compactConstructors = addCompactConstructorIfNeeded(annotationNode.up().up(), annotationNode);
+				for (JCMethodDecl ctr : compactConstructors) {
+					addNullCheckIfNeeded(ctr, annotationNode.up(), annotationNode);
+				}
+			}
+			return;
+		}
+		
+		JCMethodDecl declaration;
+		JavacNode paramNode;
+		
+		switch (annotationNode.up().getKind()) {
+		case ARGUMENT:
+			paramNode = annotationNode.up();
+			break;
+		case TYPE_USE:
+			JavacNode typeNode = annotationNode.directUp();
+			paramNode = typeNode.directUp();
+			break;
+		default:
+			return;
+		}
+		
+		if (paramNode.getKind() != Kind.ARGUMENT) return;
+		try {
+			declaration = (JCMethodDecl) paramNode.up().get();
+		} catch (Exception e) {
+			return;
+		}
+		
+		if (declaration.body == null) {
+			// This used to be a warning, but as @NonNull also has a documentary purpose, better to not warn about this. Since 1.16.7
+			return;
+		}
+		
+		if ((declaration.mods.flags & (GENERATED_MEMBER | COMPACT_RECORD_CONSTRUCTOR)) != 0) {
+			// The 'real' annotations are on the `record Foo(@NonNull Obj x)` part and we just see these
+			// syntax-sugared over. We deal with it on the field declaration variant, as those are always there,
+			// not dependent on whether you write out the compact constructor or not.
+			return;
+		}
+		
+		addNullCheckIfNeeded(declaration, paramNode, annotationNode);
 	}
 	
 	public boolean isNullCheck(JCStatement stat) {

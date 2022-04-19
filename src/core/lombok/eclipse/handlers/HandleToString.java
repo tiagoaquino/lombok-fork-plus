@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2020 The Project Lombok Authors.
+ * Copyright (C) 2009-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -50,9 +50,7 @@ import org.eclipse.jdt.internal.compiler.ast.SuperReference;
 import org.eclipse.jdt.internal.compiler.ast.ThisReference;
 import org.eclipse.jdt.internal.compiler.ast.TypeDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.TypeReference;
-import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
 import org.eclipse.jdt.internal.compiler.lookup.TypeConstants;
-import org.mangosdk.spi.ProviderFor;
 
 import lombok.AccessLevel;
 import lombok.ConfigurationKeys;
@@ -67,17 +65,19 @@ import lombok.core.handlers.InclusionExclusionUtils.Included;
 import lombok.eclipse.Eclipse;
 import lombok.eclipse.EclipseAnnotationHandler;
 import lombok.eclipse.EclipseNode;
+import lombok.spi.Provides;
 
 /**
  * Handles the {@code ToString} annotation for eclipse.
  */
-@ProviderFor(EclipseAnnotationHandler.class)
+@Provides
 public class HandleToString extends EclipseAnnotationHandler<ToString> {
 	public void handle(AnnotationValues<ToString> annotation, Annotation ast, EclipseNode annotationNode) {
 		handleFlagUsage(annotationNode, ConfigurationKeys.TO_STRING_FLAG_USAGE, "@ToString");
 		
 		ToString ann = annotation.getInstance();
-		List<Included<EclipseNode, ToString.Include>> members = InclusionExclusionUtils.handleToStringMarking(annotationNode.up(), annotation, annotationNode);
+		boolean onlyExplicitlyIncluded = annotationNode.getAst().getBooleanAnnotationValue(annotation, "onlyExplicitlyIncluded", ConfigurationKeys.TO_STRING_ONLY_EXPLICITLY_INCLUDED);
+		List<Included<EclipseNode, ToString.Include>> members = InclusionExclusionUtils.handleToStringMarking(annotationNode.up(), onlyExplicitlyIncluded, annotation, annotationNode);
 		if (members == null) return;
 		
 		Boolean callSuper = ann.callSuper();
@@ -100,30 +100,21 @@ public class HandleToString extends EclipseAnnotationHandler<ToString> {
 			return;
 		}
 		
-		boolean includeFieldNames = true;
-		try {
-			Boolean configuration = typeNode.getAst().readConfiguration(ConfigurationKeys.TO_STRING_INCLUDE_FIELD_NAMES);
-			includeFieldNames = configuration != null ? configuration : ((Boolean)ToString.class.getMethod("includeFieldNames").getDefaultValue()).booleanValue();
-		} catch (Exception ignore) {}
+		AnnotationValues<ToString> anno = AnnotationValues.of(ToString.class);
+		boolean includeFieldNames = typeNode.getAst().getBooleanAnnotationValue(anno, "includeFieldNames", ConfigurationKeys.TO_STRING_INCLUDE_FIELD_NAMES);
+		boolean onlyExplicitlyIncluded = typeNode.getAst().getBooleanAnnotationValue(anno, "onlyExplicitlyIncluded", ConfigurationKeys.TO_STRING_ONLY_EXPLICITLY_INCLUDED);
 		
 		Boolean doNotUseGettersConfiguration = typeNode.getAst().readConfiguration(ConfigurationKeys.TO_STRING_DO_NOT_USE_GETTERS);
 		FieldAccess access = doNotUseGettersConfiguration == null || !doNotUseGettersConfiguration ? FieldAccess.GETTER : FieldAccess.PREFER_FIELD;
 		
-		List<Included<EclipseNode, ToString.Include>> members = InclusionExclusionUtils.handleToStringMarking(typeNode, null, null);
+		List<Included<EclipseNode, ToString.Include>> members = InclusionExclusionUtils.handleToStringMarking(typeNode, onlyExplicitlyIncluded, null, null);
 		generateToString(typeNode, errorNode, members, includeFieldNames, null, false, access);
 	}
 	
 	public void generateToString(EclipseNode typeNode, EclipseNode errorNode, List<Included<EclipseNode, ToString.Include>> members,
 		boolean includeFieldNames, Boolean callSuper, boolean whineIfExists, FieldAccess fieldAccess) {
 		
-		TypeDeclaration typeDecl = null;
-		
-		if (typeNode.get() instanceof TypeDeclaration) typeDecl = (TypeDeclaration) typeNode.get();
-		int modifiers = typeDecl == null ? 0 : typeDecl.modifiers;
-		boolean notAClass = (modifiers &
-				(ClassFileConstants.AccInterface | ClassFileConstants.AccAnnotation)) != 0;
-		
-		if (typeDecl == null || notAClass) {
+		if (!isClassOrEnum(typeNode)) {
 			errorNode.addError("@ToString is only supported on a class or enum.");
 			return;
 		}
@@ -169,12 +160,12 @@ public class HandleToString extends EclipseAnnotationHandler<ToString> {
 		
 		String typeName = getTypeName(type);
 		boolean isEnum = type.isEnumType();
-
+		
 		char[] suffix = ")".toCharArray();
 		String infixS = ", ";
 		char[] infix = infixS.toCharArray();
 		int pS = source.sourceStart, pE = source.sourceEnd;
-		long p = (long)pS << 32 | pE;
+		long p = (long) pS << 32 | pE;
 		final int PLUS = OperatorIds.PLUS;
 		
 		String prefix;
@@ -212,7 +203,7 @@ public class HandleToString extends EclipseAnnotationHandler<ToString> {
 			
 			if (!prefix.isEmpty()) {
 				StringLiteral px = new StringLiteral(prefix.toCharArray(), pS, pE, 0);
-				setGeneratedBy(px, source);				
+				setGeneratedBy(px, source);
 				current = new BinaryExpression(current, px, PLUS);
 				current.sourceStart = pS; current.sourceEnd = pE;
 				setGeneratedBy(current, source);
@@ -323,7 +314,9 @@ public class HandleToString extends EclipseAnnotationHandler<ToString> {
 		String typeName = getSingleTypeName(type);
 		EclipseNode upType = type.up();
 		while (upType.getKind() == Kind.TYPE) {
-			typeName = getSingleTypeName(upType) + "." + typeName;
+			String upTypeName = getSingleTypeName(upType);
+			if (upTypeName.isEmpty()) break;
+			typeName = upTypeName + "." + typeName;
 			upType = upType.up();
 		}
 		return typeName;

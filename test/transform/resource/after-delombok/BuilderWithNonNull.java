@@ -1,3 +1,4 @@
+//version 8:
 class BuilderWithNonNull {
 	@lombok.NonNull
 	private final String id;
@@ -15,6 +16,9 @@ class BuilderWithNonNull {
 		@java.lang.SuppressWarnings("all")
 		BuilderWithNonNullBuilder() {
 		}
+		/**
+		 * @return {@code this}.
+		 */
 		@java.lang.SuppressWarnings("all")
 		public BuilderWithNonNull.BuilderWithNonNullBuilder id(@lombok.NonNull final String id) {
 			if (id == null) {

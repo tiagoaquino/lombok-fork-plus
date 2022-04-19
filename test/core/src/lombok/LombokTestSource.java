@@ -65,8 +65,20 @@ public class LombokTestSource {
 
 	public boolean runOnPlatform(String platform) {
 		if (platforms == null || platforms.isEmpty()) return true;
-		for (String pl : platforms) if (pl.equalsIgnoreCase(platform)) return true;
-		return false;
+		int inclusiveCount = 0;
+		for (String pl : platforms) {
+			if (pl.startsWith("!")) continue;
+			inclusiveCount++;
+			if (pl.equalsIgnoreCase(platform)) return true;
+		}
+		if (inclusiveCount == platforms.size()) {
+			return false;
+		}
+		for (String pl : platforms) {
+			if (!pl.startsWith("!")) continue;
+			if (pl.regionMatches(true, 1, platform, 0, platform.length())) return false;
+		}
+		return true;
 	}
 	
 	public boolean versionWithinLimit(int version) {
@@ -113,10 +125,10 @@ public class LombokTestSource {
 		return formatPreferences;
 	}
 	
-	private static final Pattern VERSION_STYLE_1 = Pattern.compile("^(\\d+)$");
-	private static final Pattern VERSION_STYLE_2 = Pattern.compile("^\\:(\\d+)$");
-	private static final Pattern VERSION_STYLE_3 = Pattern.compile("^(\\d+):$");
-	private static final Pattern VERSION_STYLE_4 = Pattern.compile("^(\\d+):(\\d+)$");
+	private static final Pattern VERSION_STYLE_1 = Pattern.compile("^(\\d+)(?:\\s+.*)?$");
+	private static final Pattern VERSION_STYLE_2 = Pattern.compile("^\\:(\\d+)(?:\\s+.*)?$");
+	private static final Pattern VERSION_STYLE_3 = Pattern.compile("^(\\d+):(?:\\s+.*)?$");
+	private static final Pattern VERSION_STYLE_4 = Pattern.compile("^(\\d+):(\\d+)(?:\\s+.*)?$");
 	
 	private int[] parseVersionLimit(String spec) {
 		/* Single version: '5' */ {
@@ -149,6 +161,7 @@ public class LombokTestSource {
 	private static final Pattern UNCHANGED_PATTERN = Pattern.compile("^\\s*unchanged\\s*(?:[-:].*)?$", Pattern.CASE_INSENSITIVE);
 	private static final Pattern SKIP_COMPARE_CONTENT_PATTERN = Pattern.compile("^\\s*skip[- ]?compare[- ]?contents?\\s*(?:[-:].*)?$", Pattern.CASE_INSENSITIVE);
 	private static final Pattern SKIP_IDEMPOTENT_PATTERN = Pattern.compile("^\\s*skip[- ]?idempotent\\s*(?:[-:].*)?$", Pattern.CASE_INSENSITIVE);
+	private static final Pattern ISSUE_REF_PATTERN = Pattern.compile("^\\s*issue #?\\d+(:?\\s+.*)?$", Pattern.CASE_INSENSITIVE);
 	
 	private LombokTestSource(File file, String content, List<CompilerMessageMatcher> messages, List<String> directives) {
 		this.file = file;
@@ -186,6 +199,9 @@ public class LombokTestSource {
 			
 			if (SKIP_IDEMPOTENT_PATTERN.matcher(directive).matches()) {
 				skipIdempotent = true;
+				continue;
+			}
+			if (ISSUE_REF_PATTERN.matcher(directive).matches()) {
 				continue;
 			}
 			
@@ -357,5 +373,13 @@ public class LombokTestSource {
 		
 		if (specifiedEncoding == null || specifiedEncoding.equalsIgnoreCase(encoding)) return source;
 		return read0(sourceFolder, messagesFolder, fileName, specifiedEncoding);
+	}
+	
+	public int minVersion() {
+		return Math.max(6, versionLowerLimit);
+	}
+	
+	public int maxVersion() {
+		return versionUpperLimit;
 	}
 }

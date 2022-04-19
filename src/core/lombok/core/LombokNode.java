@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2018 The Project Lombok Authors.
+ * Copyright (C) 2009-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -160,16 +160,14 @@ public abstract class LombokNode<A extends AST<A, L, N>, L extends LombokNode<A,
 		List<L> fields = new ArrayList<L>();
 		for (L potentialField : type.down()) {
 			if (potentialField.getKind() != Kind.FIELD) continue;
-			if (fieldContainsAnnotation(potentialField.get(), get())) fields.add(potentialField);
+			for (L child : potentialField.down()) {
+				if (child.getKind() != Kind.ANNOTATION) continue;
+				if (child.get() == get()) fields.add(potentialField);
+			}
 		}
 		
 		return fields;
 	}
-	
-	/**
-	 * Return {@code true} if the annotation is attached to the field.
-	 */
-	protected abstract boolean fieldContainsAnnotation(N field, N annotation);
 	
 	/**
 	 * Returns the direct parent node in the AST tree of this node. For example, a local variable declaration's
@@ -286,9 +284,24 @@ public abstract class LombokNode<A extends AST<A, L, N>, L extends LombokNode<A,
 	public abstract <Z extends Annotation> AnnotationValues<Z> findAnnotation(Class<Z> type);
 	
 	public abstract boolean isStatic();
+	public abstract boolean isFinal();
 	public abstract boolean isTransient();
+	public abstract boolean isPrimitive();
 	public abstract boolean isEnumMember();
 	public abstract boolean isEnumType();
+	
+	/**
+	 * The 'type' of the field or method, or {@code null} if this node is neither.
+	 * 
+	 * The type is as it is written in the code (no resolution), includes array dimensions, 
+	 * but not necessarily generics.
+	 * 
+	 * The main purpose of this method is to verify this type against a list of known types,
+	 * like primitives or primitive wrappers.
+	 * 
+	 * @return The 'type' of the field or method, or {@code null} if this node is neither.
+	 */
+	public abstract String fieldOrMethodBaseType();
 	
 	public abstract int countMethodParameters();
 	

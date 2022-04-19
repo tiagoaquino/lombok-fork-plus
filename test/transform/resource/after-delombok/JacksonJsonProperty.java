@@ -1,3 +1,4 @@
+//version 8: Jackson deps are at least Java7+.
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.Nulls;
@@ -16,6 +17,9 @@ public class JacksonJsonProperty {
 		@java.lang.SuppressWarnings("all")
 		JacksonJsonPropertyBuilder() {
 		}
+		/**
+		 * @return {@code this}.
+		 */
 		@JsonProperty("kebab-case-prop")
 		@JsonSetter(nulls = Nulls.SKIP)
 		@java.lang.SuppressWarnings("all")

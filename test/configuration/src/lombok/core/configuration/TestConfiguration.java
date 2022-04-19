@@ -39,7 +39,7 @@ public class TestConfiguration {
 	@Test
 	public void testDisplayVerbose() throws Exception {
 		
-		@SuppressWarnings(value = {"unchecked", "deprecation"})
+		@SuppressWarnings(value = {"all", "unchecked", "deprecation"})
 		Collection<ConfigurationKey<?>> keys = Arrays.asList(ACCESSORS_FLAG_USAGE, ACCESSORS_CHAIN, ACCESSORS_PREFIX, ADD_GENERATED_ANNOTATIONS, ADD_JAVAX_GENERATED_ANNOTATIONS, ANY_CONSTRUCTOR_ADD_CONSTRUCTOR_PROPERTIES, LOG_ANY_FIELD_NAME, COPYABLE_ANNOTATIONS);
 		
 		String baseName = "test/configuration/resource/configurationRoot/";
@@ -65,16 +65,16 @@ public class TestConfiguration {
 		outStream.flush();
 		errStream.flush();
 		
-		String out = new String(rawOut.toByteArray()).replace("\r\n", "\n").replace('\\', '/').replaceAll(Pattern.quote(normalizedName) + "|" + Pattern.quote(baseName), "BASE/").trim();
-		String err = new String(rawErr.toByteArray()).replace("\r\n", "\n").replace('\\', '/').replaceAll(Pattern.quote(normalizedName) + "|" + Pattern.quote(baseName), "BASE/").trim();
+		String out = new String(rawOut.toByteArray()).replace('\\', '/').replace("\r", "").replaceAll(Pattern.quote(normalizedName) + "|" + Pattern.quote(baseName), "BASE/").trim();
+		String err = new String(rawErr.toByteArray()).replace('\\', '/').replace("\r", "").replaceAll(Pattern.quote(normalizedName) + "|" + Pattern.quote(baseName), "BASE/").trim();
 		
 		checkContent(directory, out, "out");
 		checkContent(directory, err, "err");
-		assertEquals(0, result);
+		assertEquals(2, result);
 	}
 
 	private void checkContent(File dir, String actual, String type) throws Exception {
-		String expected = fileToString(new File(dir, type + ".txt")).trim();
+		String expected = fileToString(new File(dir, type + ".txt")).replace("\r", "").trim();
 		if (!expected.equals(actual)) {
 			System.out.printf("**** Expected %s:\n", type);
 			System.out.println(expected);

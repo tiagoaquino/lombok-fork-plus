@@ -1,0 +1,231 @@
+<!--
+ Copyright (C) 2020-2021 The Project Lombok Authors.
+  
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+  
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+  
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+  THE SOFTWARE.
+-->
+<project name="lombok.tests" default="test" xmlns:ivy="antlib:com.zwitserloot.ivyplusplus" basedir="..">
+	<description>
+This buildfile is part of projectlombok.org. It takes care of compiling and running tests.
+	</description>
+	
+	<target name="test.formatter.compile" depends="deps">
+		<mkdir dir="build/ant" />
+		<ivy:compile ecj="true" srcdir="src/ant" includes="**/SimpleTestFormatter.java" destdir="build/ant" source="1.6" target="1.6">
+			<classpath refid="cp.build" />
+			<classpath refid="cp.test" />
+		</ivy:compile>
+	</target>
+	
+	<target name="test.compile" depends="deps, compile" description="compiles the tests" unless="skip.tests">
+		<mkdir dir="build/tests" />
+		<ivy:compile destdir="build/teststubs" source="1.6" target="1.6" ecj="true" nowarn="true">
+			<src path="test/stubs" />
+		</ivy:compile>
+		<ivy:compile destdir="build/tests" source="1.5" target="1.5" ecj="true" nowarn="true">
+			<bootclasspath path="${jdk6-rt.loc}" />
+			<classpath refid="cp.test" />
+			<classpath refid="cp.eclipse-oxygen" />
+			<classpath refid="cp.javac6" />
+			<classpath refid="packing.basedirs.path" />
+			<classpath path="build/tests" />
+			<src path="test/core/src" />
+			<src path="test/transform/src" />
+			<src path="test/bytecode/src" />
+			<src path="test/configuration/src" />
+		</ivy:compile>
+		<mkdir dir="build/teststubs" />
+		<ivy:compile destdir="build/teststubs" source="1.6" target="1.6" ecj="true" nowarn="true">
+			<src path="test/stubs" />
+		</ivy:compile>
+	</target>
+	
+	<target name="test.ecj11.call" depends="deps, dist" description="Runs a few ecj-specific tests" unless="skip.tests">
+		<java jar="lib/ecj11/org.eclipse.jdt-ecj.jar" fork="true" failonerror="true">
+			<jvmarg value="-javaagent:dist/lombok.jar=ecj" />
+			<arg line="-source 1.6 -target 1.6 -cp dist/lombok.jar test/ecj/SimpleTest.java" />
+		</java>
+		<echo>run ecj11 with a test file to confirm agent injection works: OK</echo>
+	</target>
+	
+	<property name="test.limitmodules">--limit-modules java.base,jdk.unsupported</property>
+	
+	<target name="test.javac6" depends="test.formatter.compile, test.compile" description="runs the tests on your default VM, using javac6 as underlying compiler">
+		<echo>Running TestJavac on JVM${ant.java.version}, with lowest supported javac: 1.6.</echo>
+		<junit haltonfailure="yes" fork="true" forkmode="once">
+			<formatter classname="lombok.ant.SimpleTestFormatter" usefile="false" unless="tests.quiet" />
+			<classpath location="build/ant" />
+			<jvmarg value="-Xbootclasspath/a:${jdk6-rt.loc}" />
+			<jvmarg line="${test.limitmodules}" />
+			<jvmarg value="-Ddelombok.bootclasspath=${jdk6-rt.loc}" />
+			<jvmarg value="-Dsun.boot.class.path=${jdk6-rt.loc}" />
+			<classpath refid="cp.test" />
+			<classpath refid="cp.stripe" />
+			<classpath refid="cp.javac6" />
+			<classpath refid="packing.basedirs.path" />
+			<classpath location="build/tests" />
+			<classpath location="build/teststubs" />
+			<test name="lombok.TestJavac" />
+		</junit>
+	</target>
+	
+	<target name="test.javac8" depends="test.formatter.compile, test.compile, deps.jdk8-runtime" description="runs the tests on your default VM, using javac8 as underlying compiler">
+		<echo>Running TestJavac on JVM${ant.java.version}, with javac: 1.8.</echo>
+		<junit haltonfailure="yes" fork="true" forkmode="once">
+			<formatter classname="lombok.ant.SimpleTestFormatter" usefile="false" unless="tests.quiet" />
+			<jvmarg value="-Xbootclasspath/a:${jdk8-rt.loc}" />
+			<jvmarg line="${test.limitmodules}" />
+			<jvmarg value="-Ddelombok.bootclasspath=${jdk8-rt.loc}" />
+			<jvmarg value="-Dsun.boot.class.path=${jdk8-rt.loc}" />
+			<classpath location="build/ant" />
+			<classpath refid="cp.test" />
+			<classpath refid="cp.stripe" />
+			<classpath refid="cp.javac8" />
+			<classpath refid="packing.basedirs.path" />
+			<classpath location="build/tests" />
+			<classpath location="build/teststubs" />
+			<test name="lombok.TestJavac" />
+		</junit>
+	</target>
+	
+	<macrodef name="test.javacX">
+		<attribute name="version" />
+		<sequential>
+			<find-vm version="@{version}" />
+			<echo>Running TestJavac with JVM ${jvm.loc.@{version}}.</echo>
+		
+			<junit haltonfailure="yes" fork="true" forkmode="once" jvm="${jvm.loc.@{version}}/bin/${exe.java}">
+				<formatter classname="lombok.ant.SimpleTestFormatter" usefile="false" unless="tests.quiet" />
+				<classpath location="build/ant" />
+				<classpath refid="cp.test" />
+				<classpath refid="cp.stripe" />
+				<classpath refid="packing.basedirs.path" />
+				<classpath location="build/tests" />
+				<classpath location="build/teststubs" />
+				<test name="lombok.TestJavac" />
+			</junit>
+		</sequential>
+	</macrodef>
+	
+	<target name="test.javac11" depends="test.formatter.compile, test.compile" description="runs the tests on your default VM, using javac11 as underlying compiler">
+		<test.javacX version="11" />
+	</target>
+	
+	<!-- For non-LTS versions, feel free to aggressively update these to the current non-LTS openjdk version, and delete them once they roll out of the 6 month window. -->
+	
+	<target name="test.javac17" depends="test.formatter.compile, test.compile" description="runs the tests on your default VM, using javac17 as underlying compiler">
+		<test.javacX version="17" />
+	</target>
+	
+	<target name="test.javac18" depends="test.formatter.compile, test.compile" description="runs the tests on your default VM, using javac18 as underlying compiler">
+		<test.javacX version="18" />
+	</target>
+	
+	<target name="test.javacCurrent" depends="test.formatter.compile, test.compile" description="runs the tests on your default VM, using its javac as underlying compiler">
+		<echo>Running TestJavac on JVM${ant.java.version}, with the javac built into your VM distributon.</echo>
+		<junit haltonfailure="yes" fork="true" forkmode="once">
+			<formatter classname="lombok.ant.SimpleTestFormatter" usefile="false" unless="tests.quiet" />
+			<classpath location="build/ant" />
+			<classpath refid="cp.test" />
+			<classpath refid="cp.stripe" />
+			<classpath refid="packing.basedirs.path" />
+			<classpath location="build/tests" />
+			<classpath location="build/teststubs" />
+			<test name="lombok.TestJavac" />
+		</junit>
+	</target>
+	
+	<macrodef name="test.eclipse-X">
+		<attribute name="version" />
+		<attribute name="compiler.compliance.level" default="latest" />
+		<sequential>
+			<condition property="compiler.compliance.level" value="-Dcompiler.compliance.level=@{compiler.compliance.level}" else="-Dnot=set">
+				<not><equals arg1="@{compiler.compliance.level}" arg2="latest" /></not>
+			</condition>
+			<echo>Running TestEclipse on eclipse-@{version} on JVM${ant.java.version} using. Compiler compliance level: @{compiler.compliance.level}</echo>
+			<junit haltonfailure="yes" fork="true" forkmode="once">
+				<formatter classname="lombok.ant.SimpleTestFormatter" usefile="false" unless="tests.quiet" />
+				<jvmarg value="-Xbootclasspath/a:${jdk8-rt.loc}" />
+				<jvmarg value="-Ddelombok.bootclasspath=${jdk8-rt.loc}" />
+				<jvmarg value="-javaagent:dist/lombok.jar" />
+				<jvmarg value="${compiler.compliance.level}" />
+				<classpath location="build/ant" />
+				<classpath refid="cp.test" />
+				<classpath refid="cp.stripe" />
+				<classpath refid="cp.eclipse-@{version}" />
+				<classpath refid="packing.basedirs.path" />
+				<classpath location="build/tests" />
+				<classpath location="build/teststubs" />
+				<test name="lombok.TestEclipse" />
+			</junit>
+		</sequential>
+	</macrodef>
+	
+	<target name="test.eclipse-oxygen" depends="test.formatter.compile, test.compile" description="runs the tests on your default VM, testing the oxygen release of eclipse">
+		<test.eclipse-X version="oxygen" />
+	</target>
+	
+	<target name="test.eclipse-202006" depends="test.formatter.compile, test.compile" description="runs the tests on your default VM, testing the 2020-06 release of eclipse">
+		<fetchdep.eclipse version="202006" />
+		<test.eclipse-X version="202006" />
+	</target>
+	
+	<target name="test.eclipse-202006-jdk8" depends="test.formatter.compile, test.compile" description="runs the tests on your default VM, testing the 2020-06 release of eclipse with compiler compliance level 8">
+		<fetchdep.eclipse version="202006" />
+		<test.eclipse-X version="202006" compiler.compliance.level="8" />
+	</target>
+	
+	<macrodef name="test.ecj-X">
+		<attribute name="version" />
+		<sequential>
+			<echo>Running TestEclipse on ecj-@{version} on JVM${ant.java.version}.</echo>
+			<junit haltonfailure="yes" fork="true" forkmode="once">
+				<formatter classname="lombok.ant.SimpleTestFormatter" usefile="false" unless="tests.quiet" />
+				<jvmarg value="-Xbootclasspath/a:${jdk8-rt.loc}" />
+				<jvmarg value="-Ddelombok.bootclasspath=${jdk8-rt.loc}" />
+				<jvmarg value="-javaagent:dist/lombok.jar" />
+				<classpath location="build/ant" />
+				<classpath refid="cp.test" />
+				<classpath refid="cp.stripe" />
+				<classpath refid="cp.ecj@{version}" />
+				<classpath refid="packing.basedirs.path" />
+				<classpath location="build/tests" />
+				<classpath location="build/teststubs" />
+				<test name="lombok.TestEclipse" />
+			</junit>
+		</sequential>
+	</macrodef>
+	
+	<target name="test.ecj11" depends="test.formatter.compile, test.compile" description="runs the tests on your default VM, testing the ecj11 release">
+		<fetchdep.ecj version="11" />
+		<test.ecj-X version="11" />
+	</target>
+	
+	<target name="test.ecj14" depends="test.formatter.compile, test.compile" description="runs the tests on your default VM, testing the ecj11 release">
+		<fetchdep.ecj version="14" />
+		<test.ecj-X version="14" />
+	</target>
+	
+	<target name="test.ecj16" depends="test.formatter.compile, test.compile" description="runs the tests on your default VM, testing the ecj11 release">
+		<fetchdep.ecj version="16" />
+		<test.ecj-X version="16" />
+	</target>
+	
+	<target name="test" depends="test.javacCurrent, test.eclipse-202006" description="runs the tests against the default JVM, javac, and eclipse" />
+	<target name="test.broad" depends="test.javac8, test.javac17, test.javac18, test.eclipse-oxygen, test.eclipse-202006, test.eclipse-202006-jdk8" description="runs the tests against the default JVM, javac, and eclipse" />
+</project>

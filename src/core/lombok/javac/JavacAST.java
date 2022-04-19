@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2019 The Project Lombok Authors.
+ * Copyright (C) 2009-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,6 +21,7 @@
  */
 package lombok.javac;
 
+import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URI;
@@ -79,6 +80,8 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 	private final Log log;
 	private final ErrorLog errorLogger;
 	private final Context context;
+	private static final URI NOT_CALCULATED_MARKER = URI.create("https://projectlombok.org/not/calculated");
+	private URI memoizedAbsoluteFileLocation = NOT_CALCULATED_MARKER;
 	
 	/**
 	 * Creates a new JavacAST of the provided Compilation Unit.
@@ -102,15 +105,101 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 	}
 	
 	@Override public URI getAbsoluteFileLocation() {
-		return getAbsoluteFileLocation((JCCompilationUnit) top().get());
+		if (memoizedAbsoluteFileLocation == NOT_CALCULATED_MARKER) {
+			memoizedAbsoluteFileLocation = getAbsoluteFileLocation((JCCompilationUnit) top().get());
+		}
+		return memoizedAbsoluteFileLocation;
 	}
+	
+	private static Class<?> wrappedFileObjectClass, sbtJavaFileObjectClass, sbtMappedVirtualFileClass, sbtOptionClass;
+	private static Field wrappedFileObjectField, sbtJavaFileObjectField, sbtMappedVirtualFilePathField, sbtMappedVirtualFileRootsField, sbtOptionField;
+	private static Method sbtMapGetMethod;
 	
 	public static URI getAbsoluteFileLocation(JCCompilationUnit cu) {
 		try {
-			return cu.sourcefile.toUri();
+			URI uri = cu.sourcefile.toUri();
+			String fn = uri.toString();
+			if (fn.startsWith("file:")) return uri;
+			URI sbtUri = tryGetSbtFile(cu.sourcefile);
+			if (sbtUri != null) return sbtUri;
+			return uri;
 		} catch (Exception e) {
 			return null;
 		}
+	}
+	
+	private static URI tryGetSbtFile(JavaFileObject sourcefile) {
+		try {
+			return tryGetSbtFile_(sourcefile);
+		} catch (Exception e) {
+			return null;
+		}
+	}
+	
+	private static URI tryGetSbtFile_(JavaFileObject sourcefile) throws Exception {
+		Class<?> c = sourcefile.getClass();
+		String cn;
+		
+		if (wrappedFileObjectClass == null) {
+			if (!c.getName().equals("com.sun.tools.javac.api.ClientCodeWrapper$WrappedJavaFileObject")) return null;
+			wrappedFileObjectClass = c;
+		}
+		if (c != wrappedFileObjectClass) return null;
+		
+		if (wrappedFileObjectField == null) wrappedFileObjectField = Permit.permissiveGetField(wrappedFileObjectClass.getSuperclass(), "clientFileObject");
+		if (wrappedFileObjectField == null) return null;
+		Object fileObject = wrappedFileObjectField.get(sourcefile);
+		c = fileObject.getClass();
+		
+		if (sbtJavaFileObjectClass == null) {
+			cn = c.getName();
+			if (!cn.startsWith("sbt.") || !cn.endsWith("JavaFileObject")) return null;
+			sbtJavaFileObjectClass = c;
+		}
+		if (sbtJavaFileObjectClass != c) return null;
+		if (sbtJavaFileObjectField == null) sbtJavaFileObjectField = Permit.permissiveGetField(sbtJavaFileObjectClass, "underlying");
+		if (sbtJavaFileObjectField == null) return null;
+		
+		Object mappedVirtualFile = sbtJavaFileObjectField.get(fileObject);
+		c = mappedVirtualFile.getClass();
+		
+		if (sbtMappedVirtualFileClass == null) {
+			cn = c.getName();
+			if (!cn.startsWith("sbt.") || !cn.endsWith("MappedVirtualFile")) return null;
+			sbtMappedVirtualFileClass = c;
+		}
+		if (sbtMappedVirtualFilePathField == null) sbtMappedVirtualFilePathField = Permit.permissiveGetField(sbtMappedVirtualFileClass, "encodedPath");
+		if (sbtMappedVirtualFilePathField == null) return null;
+		if (sbtMappedVirtualFileRootsField == null) sbtMappedVirtualFileRootsField = Permit.permissiveGetField(sbtMappedVirtualFileClass, "rootPathsMap");
+		if (sbtMappedVirtualFileRootsField == null) return null;
+		
+		String encodedPath = (String) sbtMappedVirtualFilePathField.get(mappedVirtualFile);
+		if (!encodedPath.startsWith("${")) {
+			File maybeAbsoluteFile = new File(encodedPath);
+			if (maybeAbsoluteFile.exists()) {
+				return maybeAbsoluteFile.toURI();
+			} else {
+				return null;
+			}
+		}
+		int idx = encodedPath.indexOf('}');
+		if (idx == -1) return null;
+		String base = encodedPath.substring(2, idx);
+		Object roots = sbtMappedVirtualFileRootsField.get(mappedVirtualFile);
+		if (sbtMapGetMethod == null) sbtMapGetMethod = Permit.getMethod(roots.getClass(), "get", Object.class);
+		if (sbtMapGetMethod == null) return null;
+		
+		Object option = sbtMapGetMethod.invoke(roots, base);
+		c = option.getClass();
+		if (sbtOptionClass == null) {
+			if (c.getName().equals("scala.Some")) sbtOptionClass = c;
+		}
+		if (c != sbtOptionClass) return null;
+		if (sbtOptionField == null) sbtOptionField = Permit.permissiveGetField(sbtOptionClass, "value");
+		if (sbtOptionField == null) return null;
+		
+		Object path = sbtOptionField.get(option);
+		return new File(path.toString() + encodedPath.substring(idx + 1)).toURI();
 	}
 	
 	private static String sourceName(JCCompilationUnit cu) {
@@ -139,7 +228,7 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 			int underscoreIdx = nm.indexOf('_');
 			if (underscoreIdx > -1) return Integer.parseInt(nm.substring(underscoreIdx + 1));
 			// assume java9+
-			return Integer.parseInt(nm);
+			return Integer.parseInt(nm.substring(3));
 		} catch (Exception ignore) {}
 		return 6;
 	}
@@ -258,7 +347,7 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 		
 		if (typeUse == null) return null;
 		
-		if (typeUse.getClass().getSimpleName().equals("JCAnnotatedType")) {
+		if (typeUse.getClass().getName().equals("com.sun.tools.javac.tree.JCTree$JCAnnotatedType")) {
 			initJcAnnotatedType(typeUse.getClass());
 			Collection<?> anns = Permit.permissiveReadField(Collection.class, JCANNOTATEDTYPE_ANNOTATIONS, typeUse);
 			JCExpression underlying = Permit.permissiveReadField(JCExpression.class, JCANNOTATEDTYPE_UNDERLYINGTYPE, typeUse);
@@ -381,7 +470,7 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 		if (statement instanceof JCClassDecl) return buildType((JCClassDecl) statement);
 		if (statement instanceof JCVariableDecl) return buildLocalVar((JCVariableDecl) statement, Kind.LOCAL);
 		if (statement instanceof JCTry) return buildTry((JCTry) statement);
-		if (statement.getClass().getSimpleName().equals("JCLambda")) return buildLambda(statement);
+		if (statement.getClass().getName().equals("com.sun.tools.javac.tree.JCTree$JCLambda")) return buildLambda(statement);
 		if (setAndGetAsHandled(statement)) return null;
 		
 		return drill(statement);
@@ -392,11 +481,7 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 	}
 	
 	private JCTree getBody(JCTree jcTree) {
-		try {
-			return (JCTree) getBodyMethod(jcTree.getClass()).invoke(jcTree);
-		} catch (Exception e) {
-			throw Javac.sneakyThrow(e);
-		}
+		return (JCTree) Permit.invokeSneaky(getBodyMethod(jcTree.getClass()), jcTree);
 	}
 	
 	private final static ConcurrentMap<Class<?>, Method> getBodyMethods = new ConcurrentHashMap<Class<?>, Method>();
@@ -657,42 +742,26 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 		}
 		
 		@Override void error1(DiagnosticPosition pos, String message) {
-			try {
-				Object error = this.errorKey.invoke(diags, PROC_MESSAGER, new Object[] { message });
-				errorMethod.invoke(log, multiple, pos, error);
-			} catch (Throwable t) {
-				//t.printStackTrace();
-			}
+			Object error = Permit.invokeSneaky(this.errorKey, diags, PROC_MESSAGER, new Object[] { message });
+			if (error != null) Permit.invokeSneaky(errorMethod, log, multiple, pos, error);
 		}
 
 		@Override
 		void warning1(DiagnosticPosition pos, String message) {
-			try {
-				Object warning = this.warningKey.invoke(diags, PROC_MESSAGER, new Object[] { message });
-				warningMethod.invoke(log, pos, warning);
-			} catch (Throwable t) {
-				//t.printStackTrace();
-			}
+			Object warning = Permit.invokeSneaky(this.warningKey, diags, PROC_MESSAGER, new Object[] { message });
+			if (warning != null) Permit.invokeSneaky(warningMethod, log, pos, warning);
 		}
 
 		@Override
 		void mandatoryWarning1(DiagnosticPosition pos, String message) {
-			try {
-				Object warning = this.warningKey.invoke(diags, PROC_MESSAGER, new Object[] { message });
-				mandatoryWarningMethod.invoke(log, pos, warning);
-			} catch (Throwable t) {
-				//t.printStackTrace();
-			}
+			Object warning = Permit.invokeSneaky(this.warningKey, diags, PROC_MESSAGER, new Object[] { message });
+			if (warning != null) Permit.invokeSneaky(mandatoryWarningMethod, log, pos, warning);
 		}
 
 		@Override
 		void note(DiagnosticPosition pos, String message) {
-			try {
-				Object note = this.noteKey.invoke(diags, PROC_MESSAGER, new Object[] { message });
-				noteMethod.invoke(log, pos, note);
-			} catch (Throwable t) {
-				//t.printStackTrace();
-			}
+			Object note = Permit.invokeSneaky(this.noteKey, diags, PROC_MESSAGER, new Object[] { message });
+			if (note != null) Permit.invokeSneaky(noteMethod, log, pos, note);
 		}
 	}
 }

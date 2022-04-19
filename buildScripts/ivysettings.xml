@@ -4,9 +4,9 @@
 			<filesystem name="projectLocalRepo">
 				<ivy pattern="${ivy.settings.dir}/ivy-repo/[organization]-[module]-[revision].xml" />
 			</filesystem>
+			<ibiblio name="eclipse-staging-repo" m2compatible="true" root="https://repo.eclipse.org/content/repositories/eclipse-staging" />
 			<ibiblio name="maven-repo2" m2compatible="true" root="https://repo1.maven.org/maven2" />
 		</chain>
-        <ibiblio name="my-maven-repo" root="${myrepo.url}" m2compatible="true" pattern="[organisation]/[module]/[revision]/[module]-[revision](-[type]).[ext]" />
 	</resolvers>
 	<settings defaultResolver="projectRepos" validate="false" />
 	<caches defaultCacheDir="${ivy.basedir}/ivyCache" />

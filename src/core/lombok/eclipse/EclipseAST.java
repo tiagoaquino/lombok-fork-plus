@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2018 The Project Lombok Authors.
+ * Copyright (C) 2009-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,7 +23,6 @@ package lombok.eclipse;
 
 import java.io.File;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URI;
 import java.util.ArrayList;
@@ -31,10 +30,9 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-import lombok.Lombok;
 import lombok.core.AST;
 import lombok.core.LombokImmutableList;
-import lombok.eclipse.handlers.EclipseHandlerUtil;
+import static lombok.eclipse.handlers.EclipseHandlerUtil.*;
 import lombok.permit.Permit;
 
 import org.eclipse.core.resources.ResourcesPlugin;
@@ -117,7 +115,7 @@ public class EclipseAST extends AST<EclipseAST, EclipseNode, ASTNode> {
 				try {
 					return EclipseWorkspaceBasedFileResolver.resolve(fileName);
 				} catch (IllegalArgumentException e) {
-					EclipseHandlerUtil.warning("Finding 'lombok.config' file failed for '" + fileName + "'", e);
+					warning("Finding 'lombok.config' file failed for '" + fileName + "'", e);
 //					String msg = e.getMessage();
 //					if (msg != null && msg.startsWith("Path must include project and resource name")) {
 //						// We shouldn't throw an exception at all, but we can't reproduce this so we need help from our users to figure this out.
@@ -234,6 +232,14 @@ public class EclipseAST extends AST<EclipseAST, EclipseNode, ASTNode> {
 		}
 	}
 	
+	public void setSource(char[] source) {
+		this.source = source;
+	}
+	
+	public char[] getSource() {
+		return source;
+	}
+	
 	/**
 	 * Eclipse starts off with a 'diet' parse which leaves method bodies blank, amongst other shortcuts.
 	 * 
@@ -286,23 +292,8 @@ public class EclipseAST extends AST<EclipseAST, EclipseNode, ASTNode> {
 	 */
 	public static void addProblemToCompilationResult(char[] fileNameArray, CompilationResult result,
 			boolean isWarning, String message, int sourceStart, int sourceEnd) {
-		try {
-			EcjReflectionCheck.addProblemToCompilationResult.invoke(null, fileNameArray, result, isWarning, message, sourceStart, sourceEnd);
-		} catch (NoClassDefFoundError e) {
-			//ignore, we don't have access to the correct ECJ classes, so lombok can't possibly
-			//do anything useful here.
-		} catch (IllegalAccessException e) {
-			throw Lombok.sneakyThrow(e);
-		} catch (InvocationTargetException e) {
-			throw Lombok.sneakyThrow(e);
-		} catch (NullPointerException e) {
-			if (!"false".equals(System.getProperty("lombok.debug.reflection", "false"))) {
-				e.initCause(EcjReflectionCheck.problemAddProblemToCompilationResult);
-				throw e;
-			}
-			//ignore, we don't have access to the correct ECJ classes, so lombok can't possibly
-			//do anything useful here.
-		}
+		
+		Permit.invokeSneaky(EcjReflectionCheck.problemAddProblemToCompilationResult, EcjReflectionCheck.addProblemToCompilationResult, null, fileNameArray, result, isWarning, message, sourceStart, sourceEnd);
 	}
 	
 	public static Annotation[] getTopLevelTypeReferenceAnnotations(TypeReference tr) {
@@ -310,14 +301,15 @@ public class EclipseAST extends AST<EclipseAST, EclipseNode, ASTNode> {
 		if (m == null) return null;
 		Annotation[][] annss = null;
 		try {
-			annss = (Annotation[][]) m.invoke(tr);
+			annss = (Annotation[][]) Permit.invoke(m, tr);
 			if (annss != null) return annss[0];
 		} catch (Throwable ignore) {}
 		
 		try {
 			Field f = EcjReflectionCheck.typeReferenceAnnotations;
 			if (f == null) return null;
-			annss = (Annotation[][]) f.get(tr);
+			annss = (Annotation[][]) Permit.get(f, tr);
+			if (annss == null) return null;
 			return annss[annss.length - 1];
 		} catch (Throwable t) {
 			return null;
@@ -325,6 +317,7 @@ public class EclipseAST extends AST<EclipseAST, EclipseNode, ASTNode> {
 	}
 	
 	private final CompilationUnitDeclaration compilationUnitDeclaration;
+	private char[] source;
 	private boolean completeParse;
 	
 	private static String toFileName(CompilationUnitDeclaration ast) {
@@ -349,7 +342,7 @@ public class EclipseAST extends AST<EclipseAST, EclipseNode, ASTNode> {
 		if (!changed) clearChanged();
 	}
 	
-	private static boolean isComplete(CompilationUnitDeclaration unit) {
+	public static boolean isComplete(CompilationUnitDeclaration unit) {
 		return (unit.bits & ASTNode.HasAllMethodBodies) != 0;
 	}
 	
@@ -361,7 +354,7 @@ public class EclipseAST extends AST<EclipseAST, EclipseNode, ASTNode> {
 		case TYPE:
 			return buildType((TypeDeclaration) node);
 		case FIELD:
-			return buildField((FieldDeclaration) node);
+			return buildField((FieldDeclaration) node, null);
 		case INITIALIZER:
 			return buildInitializer((Initializer) node);
 		case METHOD:
@@ -400,16 +393,18 @@ public class EclipseAST extends AST<EclipseAST, EclipseNode, ASTNode> {
 	private EclipseNode buildType(TypeDeclaration type) {
 		if (setAndGetAsHandled(type)) return null;
 		List<EclipseNode> childNodes = new ArrayList<EclipseNode>();
-		childNodes.addAll(buildFields(type.fields));
+		childNodes.addAll(buildFields(type.fields, getRecordFieldAnnotations(type)));
 		childNodes.addAll(buildTypes(type.memberTypes));
 		childNodes.addAll(buildMethods(type.methods));
 		childNodes.addAll(buildAnnotations(type.annotations, false));
 		return putInMap(new EclipseNode(this, type, childNodes, Kind.TYPE));
 	}
 	
-	private Collection<EclipseNode> buildFields(FieldDeclaration[] children) {
+	private Collection<EclipseNode> buildFields(FieldDeclaration[] children, Annotation[][] annotations) {
 		List<EclipseNode> childNodes = new ArrayList<EclipseNode>();
-		if (children != null) for (FieldDeclaration child : children) addIfNotNull(childNodes, buildField(child));
+		if (children != null) for (int i = 0; i < children.length; i++) {
+			addIfNotNull(childNodes, buildField(children[i], annotations[i]));
+		}
 		return childNodes;
 	}
 	
@@ -419,13 +414,13 @@ public class EclipseAST extends AST<EclipseAST, EclipseNode, ASTNode> {
 		return list;
 	}
 	
-	private EclipseNode buildField(FieldDeclaration field) {
-		if (field instanceof Initializer) return buildInitializer((Initializer)field);
+	private EclipseNode buildField(FieldDeclaration field, Annotation[] annotations) {
+		if (field instanceof Initializer) return buildInitializer((Initializer) field);
 		if (setAndGetAsHandled(field)) return null;
 		List<EclipseNode> childNodes = new ArrayList<EclipseNode>();
 		addIfNotNull(childNodes, buildTypeUse(field.type));
 		addIfNotNull(childNodes, buildStatement(field.initialization));
-		childNodes.addAll(buildAnnotations(field.annotations, true));
+		childNodes.addAll(buildAnnotations(annotations != null ? annotations : field.annotations, true));
 		return putInMap(new EclipseNode(this, field, childNodes, Kind.FIELD));
 	}
 	

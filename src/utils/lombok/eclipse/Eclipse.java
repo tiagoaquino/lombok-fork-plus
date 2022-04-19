@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2019 The Project Lombok Authors.
+ * Copyright (C) 2009-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -29,6 +29,7 @@ import java.util.regex.Pattern;
 
 import lombok.core.ClassLiteral;
 import lombok.core.FieldSelect;
+import lombok.core.JavaIdentifiers;
 import lombok.permit.Permit;
 
 import org.eclipse.jdt.internal.compiler.ast.ASTNode;
@@ -58,6 +59,14 @@ public class Eclipse {
 	 * any method, field, or initializer you create!
 	 */
 	public static final int ECLIPSE_DO_NOT_TOUCH_FLAG = ASTNode.Bit24;
+	
+	/* This section includes flags that are in ecj files too new vs. the deps we compile against.
+	 * Specifically: org.eclipse.jdt.internal.compiler.ast.ASTNode and org.eclipse.jdt.internal.compiler.lookup.ExtraCompilerModifiers
+	 */
+	public static final int AccRecord = ASTNode.Bit25; // ECM.AccRecord
+	public static final int IsCanonicalConstructor = ASTNode.Bit10; // ASTNode.IsCanonicalConstructor
+	public static final int IsImplicit = ASTNode.Bit11; // ASTNode.IsImplicit
+	public static final int HasTypeAnnotations = ASTNode.Bit21; // ASTNode.HasTypeAnnotations
 	
 	private static final Pattern SPLIT_AT_DOT = Pattern.compile("\\.");
 	
@@ -158,16 +167,12 @@ public class Eclipse {
 		return result.toArray(EMPTY_ANNOTATIONS_ARRAY);
 	}
 	
-	/** Matches any of the 8 primitive names, such as {@code boolean}. */
-	private static final Pattern PRIMITIVE_TYPE_NAME_PATTERN = Pattern.compile(
-			"^(boolean|byte|short|int|long|float|double|char)$");
-	
 	/**
 	 * Checks if the given type reference represents a primitive type.
 	 */
 	public static boolean isPrimitive(TypeReference ref) {
 		if (ref.dimensions() > 0) return false;
-		return PRIMITIVE_TYPE_NAME_PATTERN.matcher(toQualifiedName(ref.getTypeName())).matches();
+		return JavaIdentifiers.isPrimitive(toQualifiedName(ref.getTypeName()));
 	}
 	
 	/**
@@ -220,8 +225,11 @@ public class Eclipse {
 		int highestVersionSoFar = 0;
 		for (Field f : ClassFileConstants.class.getDeclaredFields()) {
 			try {
-				if (f.getName().startsWith("JDK1_")) {
-					int thisVersion = Integer.parseInt(f.getName().substring("JDK1_".length()));
+				if (f.getName().startsWith("JDK")) {
+					String versionString = f.getName().substring("JDK".length());
+					if (versionString.startsWith("1_")) versionString = versionString.substring("1_".length());
+					
+					int thisVersion = Integer.parseInt(versionString);
 					if (thisVersion > highestVersionSoFar) {
 						highestVersionSoFar = thisVersion;
 						latestEcjCompilerVersionConstantCached = (Long) f.get(null);
@@ -242,9 +250,14 @@ public class Eclipse {
 		
 		for (Field f : CompilerOptions.class.getDeclaredFields()) {
 			try {
-				if (f.getName().startsWith("VERSION_1_")) {
-					ecjCompilerVersionCached = Math.max(ecjCompilerVersionCached, Integer.parseInt(f.getName().substring("VERSION_1_".length())));
-				}
+				String fName = f.getName();
+				String versionNumber = null;
+				if (fName.startsWith("VERSION_1_")) {
+					versionNumber = fName.substring("VERSION_1_".length());
+				} else if (fName.startsWith("VERSION_")) {
+					versionNumber = fName.substring("VERSION_".length());
+				} else continue;
+				ecjCompilerVersionCached = Math.max(ecjCompilerVersionCached, Integer.parseInt(versionNumber));
 			} catch (Exception ignore) {}
 		}
 		

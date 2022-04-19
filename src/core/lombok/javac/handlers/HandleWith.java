@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2020 The Project Lombok Authors.
+ * Copyright (C) 2012-2022 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,16 +33,14 @@ import lombok.With;
 import lombok.core.AST.Kind;
 import lombok.core.AnnotationValues;
 import lombok.core.configuration.CheckerFrameworkVersion;
+import lombok.experimental.Accessors;
 import lombok.javac.JavacAnnotationHandler;
 import lombok.javac.JavacNode;
 import lombok.javac.JavacTreeMaker;
 import lombok.javac.handlers.JavacHandlerUtil.CopyJavadoc;
-
-import org.mangosdk.spi.ProviderFor;
+import lombok.spi.Provides;
 
 import com.sun.tools.javac.code.Flags;
-import com.sun.tools.javac.code.Type;
-import com.sun.tools.javac.code.Symbol.ClassSymbol;
 import com.sun.tools.javac.tree.JCTree.JCAnnotation;
 import com.sun.tools.javac.tree.JCTree.JCBlock;
 import com.sun.tools.javac.tree.JCTree.JCClassDecl;
@@ -62,7 +60,7 @@ import com.sun.tools.javac.util.Name;
 /**
  * Handles the {@code lombok.With} annotation for javac.
  */
-@ProviderFor(JavacAnnotationHandler.class)
+@Provides
 public class HandleWith extends JavacAnnotationHandler<With> {
 	public void generateWithForType(JavacNode typeNode, JavacNode errorNode, AccessLevel level, boolean checkForTypeLevelWith) {
 		if (checkForTypeLevelWith) {
@@ -161,8 +159,9 @@ public class HandleWith extends JavacAnnotationHandler<With> {
 			return;
 		}
 		
+		AnnotationValues<Accessors> accessors = getAccessorsForField(fieldNode);
 		JCVariableDecl fieldDecl = (JCVariableDecl) fieldNode.get();
-		String methodName = toWithName(fieldNode);
+		String methodName = toWithName(fieldNode, accessors);
 		
 		if (methodName == null) {
 			fieldNode.addWarning("Not generating a withX method for this field: It does not fit your @Accessors prefix list.");
@@ -190,7 +189,7 @@ public class HandleWith extends JavacAnnotationHandler<With> {
 			return;
 		}
 		
-		for (String altName : toAllWithNames(fieldNode)) {
+		for (String altName : toAllWithNames(fieldNode, accessors)) {
 			switch (methodExists(altName, fieldNode, false, 1)) {
 			case EXISTS_BY_LOMBOK:
 				return;
@@ -212,10 +211,8 @@ public class HandleWith extends JavacAnnotationHandler<With> {
 		
 		JCMethodDecl createdWith = createWith(access, fieldNode, fieldNode.getTreeMaker(), source, onMethod, onParam, makeAbstract);
 		createRelevantNonNullAnnotation(fieldNode, createdWith);
-		ClassSymbol sym = ((JCClassDecl) fieldNode.up().get()).sym;
-		Type returnType = sym == null ? null : sym.type;
-		
-		injectMethod(typeNode, createdWith, List.<Type>of(getMirrorForFieldType(fieldNode)), returnType);
+		recursiveSetGeneratedBy(createdWith, source);
+		injectMethod(typeNode, createdWith);
 	}
 	
 	public JCMethodDecl createWith(long access, JavacNode field, JavacTreeMaker maker, JavacNode source, List<JCAnnotation> onMethod, List<JCAnnotation> onParam, boolean makeAbstract) {
@@ -234,7 +231,8 @@ public class HandleWith extends JavacAnnotationHandler<With> {
 		long flags = JavacHandlerUtil.addFinalIfNeeded(Flags.PARAMETER, field.getContext());
 		List<JCAnnotation> annsOnParam = copyAnnotations(onParam).appendList(copyableAnnotations);
 		
-		JCVariableDecl param = maker.VarDef(maker.Modifiers(flags, annsOnParam), fieldDecl.name, fieldDecl.vartype, null);
+		JCExpression pType = cloneType(maker, fieldDecl.vartype, source);
+		JCVariableDecl param = maker.VarDef(maker.Modifiers(flags, annsOnParam), fieldDecl.name, pType, null);
 		
 		if (!makeAbstract) {
 			ListBuffer<JCStatement> statements = new ListBuffer<JCStatement>();
@@ -286,9 +284,12 @@ public class HandleWith extends JavacAnnotationHandler<With> {
 		
 		if (isFieldDeprecated(field)) annsOnMethod = annsOnMethod.prepend(maker.Annotation(genJavaLangTypeRef(field, "Deprecated"), List.<JCExpression>nil()));
 		
-		if (makeAbstract) access = access | Flags.ABSTRACT;
+		if (makeAbstract) access |= Flags.ABSTRACT;
+		AnnotationValues<Accessors> accessors = JavacHandlerUtil.getAccessorsForField(field);
+		boolean makeFinal = shouldMakeFinal(field, accessors);
+		if (makeFinal) access |= Flags.FINAL;
 		JCMethodDecl decl = recursiveSetGeneratedBy(maker.MethodDef(maker.Modifiers(access, annsOnMethod), methodName, returnType,
-			methodGenericParams, parameters, throwsClauses, methodBody, annotationMethodDefaultValue), source.get(), field.getContext());
+			methodGenericParams, parameters, throwsClauses, methodBody, annotationMethodDefaultValue), source);
 		copyJavadoc(field, decl, CopyJavadoc.WITH);
 		return decl;
 	}

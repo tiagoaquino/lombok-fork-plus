@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2020 The Project Lombok Authors.
+ * Copyright (C) 2013-2022 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,6 +24,7 @@ package lombok;
 import java.util.List;
 
 import lombok.core.configuration.CallSuperType;
+import lombok.core.configuration.CapitalizationStrategy;
 import lombok.core.configuration.CheckerFrameworkVersion;
 import lombok.core.configuration.ConfigurationKey;
 import lombok.core.configuration.FlagUsageType;
@@ -90,6 +91,13 @@ public class ConfigurationKeys {
 	public static final ConfigurationKey<Boolean> ADD_FINDBUGS_SUPPRESSWARNINGS_ANNOTATIONS = new ConfigurationKey<Boolean>("lombok.extern.findbugs.addSuppressFBWarnings", "Generate @edu.umd.cs.findbugs.annotations.SuppressFBWarnings on all generated code (default: false).") {};
 	
 	/**
+	 * lombok configuration: {@code lombok.addSuppressWarnings} = {@code true} | {@code false}.
+	 * 
+	 * If {@code true}, lombok generates {@code @java.lang.SuppressWarnings("all")} on all fields, methods, and types that are generated.
+	 */
+	public static final ConfigurationKey<Boolean> ADD_SUPPRESSWARNINGS_ANNOTATIONS = new ConfigurationKey<Boolean>("lombok.addSuppressWarnings", "Generate @java.lang.SuppressWarnings(\"all\") on all generated code (default: true).") {};
+	
+	/**
 	 * lombok configuration: {@code lombok.addNullAnnotations = }one of: [{@code none}, {@code javax}, {@code eclipse}, {@code jetbrains}, {@code netbeans}, {@code androidx}, {@code android.support}, {@code checkerframework}, {@code findbugs}, {@code spring}, {@code JML}, or a custom set of fully qualified annotation types].
 	 * 
 	 * Lombok generally copies relevant nullity annotations from your source code to the right places. However, sometimes lombok generates code where the nullability of some node is not dependent on something in your source code. You can configure lombok to add an appropriate nullity annotation in this case.<ul>
@@ -133,7 +141,7 @@ public class ConfigurationKeys {
 	 * NB: GWT projects, and probably android projects, should explicitly set this key to {@code true} for the entire project.
 	 * 
 	 * <br>
-	 * <em>BREAKING CHANGE</em>: Starting with lombok v1.16.20, defaults to {@code false} instead of {@code true}, as {@code @ConstructorProperties} requires extra modules in JDK9.
+	 * <em>BREAKING CHANGE</em>: Starting with lombok v1.16.20, defaults to {@code true} instead of {@code false}, as {@code @ConstructorProperties} requires extra modules in JDK9.
 	 * 
 	 * @see ConfigurationKeys#ANY_CONSTRUCTOR_ADD_CONSTRUCTOR_PROPERTIES
 	 * @deprecated Since version 2.0, use {@link #ANY_CONSTRUCTOR_ADD_CONSTRUCTOR_PROPERTIES} instead.
@@ -166,9 +174,9 @@ public class ConfigurationKeys {
 	/**
 	 * lombok configuration: {@code lombok.noArgsConstructor.extraPrivate} = {@code true} | {@code false}.
 	 * 
-	 * If {@code true} (default), @Data and @Value will also generate a private no-args constructor, if there isn't already one, setting all fields to their default values. 
+	 * If {@code true}, @Data and @Value will also generate a private no-args constructor, if there isn't already one, setting all fields to their default values.
 	 */
-	public static final ConfigurationKey<Boolean> NO_ARGS_CONSTRUCTOR_EXTRA_PRIVATE = new ConfigurationKey<Boolean>("lombok.noArgsConstructor.extraPrivate", "Generate a private no-args constructor for @Data and @Value (default: true).") {};
+	public static final ConfigurationKey<Boolean> NO_ARGS_CONSTRUCTOR_EXTRA_PRIVATE = new ConfigurationKey<Boolean>("lombok.noArgsConstructor.extraPrivate", "Generate a private no-args constructor for @Data and @Value (default: false).") {};
 	
 	/**
 	 * lombok configuration: {@code lombok.requiredArgsConstructor.flagUsage} = {@code WARNING} | {@code ERROR}.
@@ -267,7 +275,7 @@ public class ConfigurationKeys {
 	 * 
 	 * For any class with an {@code @ToString} annotation which extends a class other than {@code java.lang.Object}, should a call to superclass's implementation of {@code toString} be included in the generated method? (Default = skip)
 	 */
-	public static final ConfigurationKey<CallSuperType> TO_STRING_CALL_SUPER = new ConfigurationKey<CallSuperType>("lombok.toString.callSuper", "When generating toString for classes that extend something (other than Object), either automatically take into account superclass implementation (call), or don't (skip), or warn and don't (warn). (default = warn).") {};
+	public static final ConfigurationKey<CallSuperType> TO_STRING_CALL_SUPER = new ConfigurationKey<CallSuperType>("lombok.toString.callSuper", "When generating toString for classes that extend something (other than Object), either automatically take into account superclass implementation (call), or don't (skip), or warn and don't (warn). (default = skip).") {};
 	
 	/**
 	 * lombok configuration: {@code lombok.toString.flagUsage} = {@code WARNING} | {@code ERROR}.
@@ -282,6 +290,13 @@ public class ConfigurationKeys {
 	 * For any class without an {@code @ToString} that explicitly defines the {@code includeFieldNames} option, this value is used  (default = true).
 	 */
 	public static final ConfigurationKey<Boolean> TO_STRING_INCLUDE_FIELD_NAMES = new ConfigurationKey<Boolean>("lombok.toString.includeFieldNames", "Include the field names in the generated toString method (default = true).") {};
+	
+	/**
+	 * lombok configuration: {@code lombok.toString.onlyExplicitlyIncluded} = {@code true} | {@code false}.
+	 * 
+	 * If {@code true}, require a {@code @ToString.Include} annotation on any fields/no-args methods you want to include in lombok's generated `@ToString` method. Otherwise, every (non-static, non-dollar-named) field is included by default  (default = false).
+	 */
+	public static final ConfigurationKey<Boolean> TO_STRING_ONLY_EXPLICITLY_INCLUDED = new ConfigurationKey<Boolean>("lombok.toString.onlyExplicitlyIncluded", "Include only fields/methods explicitly marked with @ToString.Include. Otherwise, include all non-static, non-dollar-named fields (default = false).") {};
 	
 	// ----- Builder -----
 	
@@ -535,7 +550,7 @@ public class ConfigurationKeys {
 	 * 
 	 * For any class without an {@code @Accessors} that explicitly defines the {@code prefix} option, this list of prefixes is used.
 	 */
-	public static final ConfigurationKey<List<String>> ACCESSORS_PREFIX = new ConfigurationKey<List<String>>("lombok.accessors.prefix", "Strip this field prefix, like 'f' or 'm_', from the names of generated getters and setters.") {};
+	public static final ConfigurationKey<List<String>> ACCESSORS_PREFIX = new ConfigurationKey<List<String>>("lombok.accessors.prefix", "Strip this field prefix, like 'f' or 'm_', from the names of generated getters, setters, and with-ers.") {};
 	
 	/**
 	 * lombok configuration: {@code lombok.accessors.chain} = {@code true} | {@code false}.
@@ -550,6 +565,22 @@ public class ConfigurationKeys {
 	 * For any class without an {@code @Accessors} that explicitly defines the {@code fluent} option, this value is used (default = false).
 	 */
 	public static final ConfigurationKey<Boolean> ACCESSORS_FLUENT = new ConfigurationKey<Boolean>("lombok.accessors.fluent", "Generate getters and setters using only the field name (no get/set prefix) (default: false).") {};
+	
+	/**
+	 * lombok configuration: {@code lombok.accessors.makeFinal} = {@code true} | {@code false}.
+	 * 
+	 * Unless an explicit {@code @Accessors} that explicitly defines the {@code makeFinal} option, this value is used (default = false).
+	 */
+	public static final ConfigurationKey<Boolean> ACCESSORS_MAKE_FINAL = new ConfigurationKey<Boolean>("lombok.accessors.makeFinal", "Generate getters, setters and with-ers with the 'final' modifier (default: false).") {};
+	
+	/**
+	 * lombok configuration: {@code lombok.accessors.capitalization} = {@code basic} | {@code beanspec}.
+	 * 
+	 * Which capitalization rule is used to turn field names into getter/setter/with names and vice versa for field names that start with 1 lowercase letter, then 1 uppercase letter.
+	 * basic = {@code uShape} becomes {@code getUShape}, beanspec = {@code uShape} becomes {@code getuShape} (default = basic).
+	 */
+	public static final ConfigurationKey<CapitalizationStrategy> ACCESSORS_JAVA_BEANS_SPEC_CAPITALIZATION = new ConfigurationKey<CapitalizationStrategy>("lombok.accessors.capitalization", "Which capitalization strategy to use when converting field names to accessor names and vice versa (default: basic).") {};
+	
 	
 	// ----- ExtensionMethod -----
 	
@@ -643,6 +674,24 @@ public class ConfigurationKeys {
 	 */
 	public static final ConfigurationKey<FlagUsageType> SUPERBUILDER_FLAG_USAGE = new ConfigurationKey<FlagUsageType>("lombok.superBuilder.flagUsage", "Emit a warning or error if @SuperBuilder is used.") {};
 
+	// ----- WithBy -----
+	
+	/**
+	 * lombok configuration: {@code lombok.withBy.flagUsage} = {@code WARNING} | {@code ERROR}.
+	 * 
+	 * If set, <em>any</em> usage of {@code @WithBy} results in a warning / error.
+	 */
+	public static final ConfigurationKey<FlagUsageType> WITHBY_FLAG_USAGE = new ConfigurationKey<FlagUsageType>("lombok.withBy.flagUsage", "Emit a warning or error if @WithBy is used.") {};
+
+	// ----- Jacksonized -----
+	
+	/**
+	 * lombok configuration: {@code lombok.jacksonized.flagUsage} = {@code WARNING} | {@code ERROR}.
+	 * 
+	 * If set, <em>any</em> usage of {@code @Jacksonized} results in a warning / error.
+	 */
+	public static final ConfigurationKey<FlagUsageType> JACKSONIZED_FLAG_USAGE = new ConfigurationKey<FlagUsageType>("lombok.jacksonized.flagUsage", "Emit a warning or error if @Jacksonized is used.") {};
+	
 	// ----- Configuration System -----
 	
 	/**
@@ -670,4 +719,10 @@ public class ConfigurationKeys {
 	 */
 	public static final ConfigurationKey<CheckerFrameworkVersion> CHECKER_FRAMEWORK = new ConfigurationKey<CheckerFrameworkVersion>("checkerframework", "If set with the version of checkerframework.org (in major.minor, or just 'true' for the latest supported version), create relevant checkerframework.org annotations for code lombok generates (default: false).") {};
 
+	/**
+	 * lombok configuration: {@code lombok.standardException.flagUsage} = {@code WARNING} | {@code ERROR}.
+	 *
+	 * If set, <em>any</em> usage of {@code @StandardException} results in a warning / error.
+	 */
+	public static final ConfigurationKey<FlagUsageType> STANDARD_EXCEPTION_FLAG_USAGE = new ConfigurationKey<FlagUsageType>("lombok.standardException.flagUsage", "Emit a warning or error if @StandardException is used.") {};
 }

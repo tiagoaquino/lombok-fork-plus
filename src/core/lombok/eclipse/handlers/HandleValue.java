@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2014 The Project Lombok Authors.
+ * Copyright (C) 2012-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -34,17 +34,17 @@ import lombok.eclipse.EclipseAnnotationHandler;
 import lombok.eclipse.EclipseNode;
 import lombok.eclipse.handlers.HandleConstructor.SkipIfConstructorExists;
 import lombok.experimental.NonFinal;
+import lombok.spi.Provides;
 import lombok.Value;
 
 import org.eclipse.jdt.internal.compiler.ast.Annotation;
 import org.eclipse.jdt.internal.compiler.ast.TypeDeclaration;
 import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
-import org.mangosdk.spi.ProviderFor;
 
 /**
  * Handles the {@code lombok.Value} annotation for eclipse.
  */
-@ProviderFor(EclipseAnnotationHandler.class)
+@Provides
 @HandlerPriority(-512) //-2^9; to ensure @EqualsAndHashCode and such pick up on this handler making the class final and messing with the fields' access levels, run earlier.
 public class HandleValue extends EclipseAnnotationHandler<Value> {
 	private HandleFieldDefaults handleFieldDefaults = new HandleFieldDefaults();
@@ -59,16 +59,11 @@ public class HandleValue extends EclipseAnnotationHandler<Value> {
 		Value ann = annotation.getInstance();
 		EclipseNode typeNode = annotationNode.up();
 		
-		TypeDeclaration typeDecl = null;
-		if (typeNode.get() instanceof TypeDeclaration) typeDecl = (TypeDeclaration) typeNode.get();
-		int modifiers = typeDecl == null ? 0 : typeDecl.modifiers;
-		boolean notAClass = (modifiers &
-				(ClassFileConstants.AccInterface | ClassFileConstants.AccAnnotation | ClassFileConstants.AccEnum)) != 0;
-		
-		if (typeDecl == null || notAClass) {
+		if (!isClass(typeNode)) {
 			annotationNode.addError("@Value is only supported on a class.");
 			return;
 		}
+		TypeDeclaration typeDecl = (TypeDeclaration) typeNode.get();
 		
 		// Make class final.
 		if (!hasAnnotation(NonFinal.class, typeNode)) {

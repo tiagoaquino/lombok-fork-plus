@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2019 The Project Lombok Authors.
+ * Copyright (C) 2010-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -57,8 +57,8 @@ import org.eclipse.jdt.internal.compiler.problem.AbortCompilation;
 import java.lang.reflect.Field;
 
 import static lombok.Lombok.sneakyThrow;
-import static lombok.eclipse.Eclipse.poss;
-import static lombok.eclipse.handlers.EclipseHandlerUtil.makeType;
+import static lombok.eclipse.Eclipse.*;
+import static lombok.eclipse.handlers.EclipseHandlerUtil.*;
 import static org.eclipse.jdt.core.compiler.CategorizedProblem.CAT_TYPE;
 
 public class PatchVal {
@@ -66,32 +66,7 @@ public class PatchVal {
 	// This is half of the work for 'val' support - the other half is in PatchValEclipse. This half is enough for ecj.
 	// Creates a copy of the 'initialization' field on a LocalDeclaration if the type of the LocalDeclaration is 'val', because the completion parser will null this out,
 	// which in turn stops us from inferring the intended type for 'val x = 5;'. We look at the copy.
-	// Also patches local declaration to not call .resolveType() on the initializer expression if we've already done so (calling it twice causes weird errors),
-	// and patches .resolve() on LocalDeclaration itself to just-in-time replace the 'val' vartype with the right one.
-	
-	public static TypeBinding skipResolveInitializerIfAlreadyCalled(Expression expr, BlockScope scope) {
-		if (expr.resolvedType != null) return expr.resolvedType;
-		try {
-			return expr.resolveType(scope);
-		} catch (NullPointerException e) {
-			return null;
-		} catch (ArrayIndexOutOfBoundsException e) {
-			// This will occur internally due to for example 'val x = mth("X");', where mth takes 2 arguments.
-			return null;
-		}
-	}
-	
-	public static TypeBinding skipResolveInitializerIfAlreadyCalled2(Expression expr, BlockScope scope, LocalDeclaration decl) {
-		if (decl != null && LocalDeclaration.class.equals(decl.getClass()) && expr.resolvedType != null) return expr.resolvedType;
-		try {
-			return expr.resolveType(scope);
-		} catch (NullPointerException e) {
-			return null;
-		} catch (ArrayIndexOutOfBoundsException e) {
-			// This will occur internally due to for example 'val x = mth("X");', where mth takes 2 arguments.
-			return null;
-		}
-	}
+	// Also patches .resolve() on LocalDeclaration itself to just-in-time replace the 'val' vartype with the right one.
 	
 	public static boolean matches(String key, char[] array) {
 		if (array == null || key.length() != array.length) return false;
@@ -143,7 +118,7 @@ public class PatchVal {
 	public static boolean couldBe(ImportReference[] imports, String key, TypeReference ref) {
 		String[] keyParts = key.split("\\.");
 		if (ref instanceof SingleTypeReference) {
-			char[] token = ((SingleTypeReference)ref).token;
+			char[] token = ((SingleTypeReference) ref).token;
 			if (!matches(keyParts[keyParts.length - 1], token)) return false;
 			if (imports == null) return true;
 			top:
@@ -163,7 +138,7 @@ public class PatchVal {
 		}
 		
 		if (ref instanceof QualifiedTypeReference) {
-			char[][] tokens = ((QualifiedTypeReference)ref).tokens;
+			char[][] tokens = ((QualifiedTypeReference) ref).tokens;
 			if (keyParts.length != tokens.length) return false;
 			for(int i = 0; i < tokens.length; ++i) {
 				String part = keyParts[i];
@@ -227,14 +202,16 @@ public class PatchVal {
 		boolean var = isVar(local, scope);
 		if (!(val || var)) return false;
 		
-		StackTraceElement[] st = new Throwable().getStackTrace();
-		for (int i = 0; i < st.length - 2 && i < 10; i++) {
-			if (st[i].getClassName().equals("lombok.launch.PatchFixesHider$Val")) {
-				boolean valInForStatement = val &&
-					st[i + 1].getClassName().equals("org.eclipse.jdt.internal.compiler.ast.LocalDeclaration") &&
-					st[i + 2].getClassName().equals("org.eclipse.jdt.internal.compiler.ast.ForStatement");
-				if (valInForStatement) return false;
-				break;
+		if (val) {
+			StackTraceElement[] st = new Throwable().getStackTrace();
+			for (int i = 0; i < st.length - 2 && i < 10; i++) {
+				if (st[i].getClassName().equals("lombok.launch.PatchFixesHider$Val")) {
+					boolean valInForStatement = 
+						st[i + 1].getClassName().equals("org.eclipse.jdt.internal.compiler.ast.LocalDeclaration") &&
+						st[i + 2].getClassName().equals("org.eclipse.jdt.internal.compiler.ast.ForStatement");
+					if (valInForStatement) return false;
+					break;
+				}
 			}
 		}
 		
@@ -258,6 +235,13 @@ public class PatchVal {
 		
 		TypeReference replacement = null;
 		
+		// Java 10+: Lombok uses the native 'var' support and transforms 'val' to 'final var'.
+		if (hasNativeVarSupport(scope) && val) {
+			replacement = new SingleTypeReference("var".toCharArray(), pos(local.type));
+			local.initialization = init;
+			init = null;
+		}
+		
 		if (init != null) {
 			if (init.getClass().getName().equals("org.eclipse.jdt.internal.compiler.ast.LambdaExpression")) {
 				return false;
@@ -273,6 +257,46 @@ public class PatchVal {
 				// just go with 'Object' and let the IDE print the appropriate errors.
 				resolved = null;
 			}
+			
+			if (resolved == null) {
+				if (init instanceof ConditionalExpression) {
+					ConditionalExpression cexp = (ConditionalExpression) init;
+					Expression ifTrue = cexp.valueIfTrue;
+					Expression ifFalse = cexp.valueIfFalse;
+					TypeBinding ifTrueResolvedType = ifTrue.resolvedType;
+					CompilationResult compilationResult = scope.referenceCompilationUnit().compilationResult;
+					CategorizedProblem[] problems = compilationResult.problems;
+					CategorizedProblem lastProblem = problems[compilationResult.problemCount - 1];
+					if (ifTrueResolvedType != null && ifFalse.resolvedType == null && lastProblem.getCategoryID() == CAT_TYPE) {
+						int problemCount = compilationResult.problemCount;
+						for (int i = 0; i < problemCount; ++i) {
+							if (problems[i] == lastProblem) {
+								problems[i] = null;
+								if (i + 1 < problemCount) {
+									System.arraycopy(problems, i + 1, problems, i, problemCount - i + 1);
+								}
+								break;
+							}
+						}
+						compilationResult.removeProblem(lastProblem);
+						if (!compilationResult.hasErrors()) {
+							clearIgnoreFurtherInvestigationField(scope.referenceContext());
+							setValue(getField(CompilationResult.class, "hasMandatoryErrors"), compilationResult, false);
+						}
+						
+						if (ifFalse instanceof FunctionalExpression) {
+							FunctionalExpression functionalExpression = (FunctionalExpression) ifFalse;
+							functionalExpression.setExpectedType(ifTrueResolvedType);
+						}
+						if (ifFalse.resolvedType == null) {
+							resolveForExpression(ifFalse, scope);
+						}
+						
+						resolved = ifTrueResolvedType;
+					}
+				}
+			}
+			
 			if (resolved != null) {
 				try {
 					replacement = makeType(resolved, local.type, false);
@@ -286,7 +310,6 @@ public class PatchVal {
 		if (val) local.modifiers |= ClassFileConstants.AccFinal;
 		local.annotations = addValAnnotation(local.annotations, local.type, scope);
 		local.type = replacement != null ? replacement : new QualifiedTypeReference(TypeConstants.JAVA_LANG_OBJECT, poss(local.type, 3));
-		
 		return false;
 	}
 	
@@ -298,12 +321,22 @@ public class PatchVal {
 		return is(local.type, scope, "lombok.val");
 	}
 	
+	private static boolean hasNativeVarSupport(Scope scope) {
+		long sl = scope.problemReporter().options.sourceLevel >> 16;
+		long cl = scope.problemReporter().options.complianceLevel >> 16;
+		if (sl == 0) sl = cl;
+		if (cl == 0) cl = sl;
+		return Math.min((int)(sl - 44), (int)(cl - 44)) >= 10;
+	}
+	
 	public static boolean handleValForForEach(ForeachStatement forEach, BlockScope scope) {
 		if (forEach.elementVariable == null) return false;
 		
 		boolean val = isVal(forEach.elementVariable, scope);
 		boolean var = isVar(forEach.elementVariable, scope);
 		if (!(val || var)) return false;
+		
+		if (hasNativeVarSupport(scope)) return false;
 		
 		TypeBinding component = getForEachComponentType(forEach.collection, scope);
 		if (component == null) return false;
@@ -326,7 +359,8 @@ public class PatchVal {
 			newAnn = new Annotation[1];
 		}
 		
-		newAnn[newAnn.length - 1] = new org.eclipse.jdt.internal.compiler.ast.MarkerAnnotation(originalRef, originalRef.sourceStart);
+		TypeReference qualifiedTypeRef = generateQualifiedTypeRef(originalRef, originalRef.getTypeName());
+		newAnn[newAnn.length - 1] = new org.eclipse.jdt.internal.compiler.ast.MarkerAnnotation(qualifiedTypeRef, qualifiedTypeRef.sourceStart);
 		
 		return newAnn;
 	}
@@ -370,43 +404,7 @@ public class PatchVal {
 			// Known cause of issues; for example: val e = mth("X"), where mth takes 2 arguments.
 			return null;
 		} catch (AbortCompilation e) {
-			if (collection instanceof ConditionalExpression) {
-				ConditionalExpression cexp = (ConditionalExpression) collection;
-				Expression ifTrue = cexp.valueIfTrue;
-				Expression ifFalse = cexp.valueIfFalse;
-				TypeBinding ifTrueResolvedType = ifTrue.resolvedType;
-				CategorizedProblem problem = e.problem;
-				if (ifTrueResolvedType != null && ifFalse.resolvedType == null && problem.getCategoryID() == CAT_TYPE) {
-					CompilationResult compilationResult = e.compilationResult;
-					CategorizedProblem[] problems = compilationResult.problems;
-					int problemCount = compilationResult.problemCount;
-					for (int i = 0; i < problemCount; ++i) {
-						if (problems[i] == problem) {
-							problems[i] = null;
-							if (i + 1 < problemCount) {
-								System.arraycopy(problems, i + 1, problems, i, problemCount - i + 1);
-							}
-							break;
-						}
-					}
-					compilationResult.removeProblem(problem);
-					if (!compilationResult.hasErrors()) {
-						clearIgnoreFurtherInvestigationField(scope.referenceContext());
-						setValue(getField(CompilationResult.class, "hasMandatoryErrors"), compilationResult, false);
-					}
-					
-					if (ifFalse instanceof FunctionalExpression) {
-						FunctionalExpression functionalExpression = (FunctionalExpression) ifFalse;
-						functionalExpression.setExpectedType(ifTrueResolvedType);
-					}
-					if (ifFalse.resolvedType == null) {
-						ifFalse.resolve(scope);
-					}
-					
-					return ifTrueResolvedType;
-				}
-			}
-			throw e;
+			return null;
 		}
 	}
 	

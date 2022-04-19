@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2019 The Project Lombok Authors.
+ * Copyright (C) 2009-2020 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,7 +24,10 @@ package lombok.javac.apt;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Enumeration;
@@ -42,7 +45,6 @@ import javax.annotation.processing.RoundEnvironment;
 import javax.annotation.processing.SupportedAnnotationTypes;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
-import javax.lang.model.element.QualifiedNameable;
 import javax.lang.model.element.TypeElement;
 import javax.tools.Diagnostic.Kind;
 import javax.tools.JavaFileManager;
@@ -61,6 +63,8 @@ import lombok.core.CleanupRegistry;
 import lombok.core.DiagnosticsReceiver;
 import lombok.javac.JavacTransformer;
 import lombok.permit.Permit;
+import lombok.permit.dummy.Parent;
+import sun.misc.Unsafe;
 
 /**
  * This Annotation Processor is the standard injection mechanism for lombok-enabling the javac compiler.
@@ -154,10 +158,10 @@ public class LombokProcessor extends AbstractProcessor {
 		disablePartialReparseInNetBeansEditor(context);
 		try {
 			Method keyMethod = Permit.getMethod(Context.class, "key", Class.class);
-			Object key = keyMethod.invoke(context, JavaFileManager.class);
+			Object key = Permit.invoke(keyMethod, context, JavaFileManager.class);
 			Field htField = Permit.getField(Context.class, "ht");
 			@SuppressWarnings("unchecked")
-			Map<Object,Object> ht = (Map<Object,Object>) htField.get(context);
+			Map<Object,Object> ht = (Map<Object,Object>) Permit.get(htField, context);
 			final JavaFileManager originalFiler = (JavaFileManager) ht.get(key);
 			if (!(originalFiler instanceof InterceptingJavaFileManager)) {
 				final Messager messager = processingEnv.getMessager();
@@ -180,10 +184,10 @@ public class LombokProcessor extends AbstractProcessor {
 
 	private void replaceFileManagerJdk9(Context context, JavaFileManager newFiler) {
 		try {
-			JavaCompiler compiler = (JavaCompiler) Permit.getMethod(JavaCompiler.class, "instance", Context.class).invoke(null, context);
+			JavaCompiler compiler = (JavaCompiler) Permit.invoke(Permit.getMethod(JavaCompiler.class, "instance", Context.class), null, context);
 			try {
 				Field fileManagerField = Permit.getField(JavaCompiler.class, "fileManager");
-				fileManagerField.set(compiler, newFiler);
+				Permit.set(fileManagerField, compiler, newFiler);
 			}
 			catch (Exception e) {}
 			
@@ -191,7 +195,7 @@ public class LombokProcessor extends AbstractProcessor {
 				Field writerField = Permit.getField(JavaCompiler.class, "writer");
 				ClassWriter writer = (ClassWriter) writerField.get(compiler);
 				Field fileManagerField = Permit.getField(ClassWriter.class, "fileManager");
-				fileManagerField.set(writer, newFiler);
+				Permit.set(fileManagerField, writer, newFiler);
 			}
 			catch (Exception e) {}
 		}
@@ -213,8 +217,8 @@ public class LombokProcessor extends AbstractProcessor {
 	private void disablePartialReparseInNetBeansEditor(Context context) {
 		try {
 			Class<?> cancelServiceClass = Class.forName("com.sun.tools.javac.util.CancelService");
-			Method cancelServiceInstace = Permit.getMethod(cancelServiceClass, "instance", Context.class);
-			Object cancelService = cancelServiceInstace.invoke(null, context);
+			Method cancelServiceInstance = Permit.getMethod(cancelServiceClass, "instance", Context.class);
+			Object cancelService = Permit.invoke(cancelServiceInstance, null, context);
 			if (cancelService == null) return;
 			Field parserField = Permit.getField(cancelService.getClass(), "parser");
 			Object parser = parserField.get(cancelService);
@@ -371,7 +375,7 @@ public class LombokProcessor extends AbstractProcessor {
 	
 	private String getModuleNameFor(Element element) {
 		while (element != null) {
-			if (element.getKind().name().equals("MODULE")) return ModuleNameOracle.getModuleName(element);
+			if (element.getKind().name().equals("MODULE")) return getModuleName(element);
 			Element n = element.getEnclosingElement();
 			if (n == element) return null;
 			element = n;
@@ -379,12 +383,24 @@ public class LombokProcessor extends AbstractProcessor {
 		return null;
 	}
 	
-	// QualifiedNameable is a java7 thing, so to remain compatible with java6, shove this into an inner class to avoid the ClassNotFoundError.
-	private static class ModuleNameOracle {
-		static String getModuleName(Element element) {
-			if (!(element instanceof QualifiedNameable)) return null;
-			String name = ((QualifiedNameable) element).getQualifiedName().toString().trim();
+	private static Class<?> qualifiedNamableClass = null;
+	private static Method qualifiedNamableQualifiedNameMethod = null;
+	// QualifiedNameable isn't in java 6, so to remain compatible with java6, use reflection.
+	private static String getModuleName(Element element) {
+		try {
+			if (qualifiedNamableClass == null) qualifiedNamableClass = Class.forName("javax.lang.model.element.QualifiedNamable");
+			if (!qualifiedNamableClass.isInstance(element)) return null;
+			if (qualifiedNamableQualifiedNameMethod == null) qualifiedNamableQualifiedNameMethod = Permit.getMethod(qualifiedNamableClass, "getQualifiedName");
+			String name = Permit.invoke(qualifiedNamableQualifiedNameMethod, element).toString().trim();
 			return name.isEmpty() ? null : name;
+		} catch (ClassNotFoundException e) {
+			return null;
+		} catch (NoSuchMethodException e) {
+			return null;
+		} catch (InvocationTargetException e) {
+			return null;
+		} catch (IllegalAccessException e) {
+			return null;
 		}
 	}
 	
@@ -394,8 +410,8 @@ public class LombokProcessor extends AbstractProcessor {
 			try {
 				path = trees.getPath(element);
 			} catch (NullPointerException ignore) {
-				// Happens if a package-info.java dowsn't conatin a package declaration.
-				// https://github.com/rzwitserloot/lombok/issues/2184
+				// Happens if a package-info.java doesn't contain a package declaration.
+				// https://github.com/projectlombok/lombok/issues/2184
 				// We can safely ignore those, since they do not need any processing
 			}
 		}
@@ -416,22 +432,108 @@ public class LombokProcessor extends AbstractProcessor {
 	 * gradle incremental compilation, the delegate ProcessingEnvironment of the gradle wrapper is returned.
 	 */
 	public JavacProcessingEnvironment getJavacProcessingEnvironment(Object procEnv) {
+		addOpensForLombok();
 		if (procEnv instanceof JavacProcessingEnvironment) return (JavacProcessingEnvironment) procEnv;
 		
 		// try to find a "delegate" field in the object, and use this to try to obtain a JavacProcessingEnvironment
 		for (Class<?> procEnvClass = procEnv.getClass(); procEnvClass != null; procEnvClass = procEnvClass.getSuperclass()) {
-			try {
-				return getJavacProcessingEnvironment(tryGetDelegateField(procEnvClass, procEnv));
-			} catch (final Exception e) {
-				// delegate field was not found, try on superclass
-			}
+			Object delegate = tryGetDelegateField(procEnvClass, procEnv);
+			if (delegate == null) delegate = tryGetProxyDelegateToField(procEnvClass, procEnv);
+			if (delegate == null) delegate = tryGetProcessingEnvField(procEnvClass, procEnv);
+			
+			if (delegate != null) return getJavacProcessingEnvironment(delegate);
+			// delegate field was not found, try on superclass
 		}
 		
 		processingEnv.getMessager().printMessage(Kind.WARNING,
 			"Can't get the delegate of the gradle IncrementalProcessingEnvironment. Lombok won't work.");
 		return null;
 	}
-
+	
+	private static Object getOwnModule() {
+		try {
+			Method m = Permit.getMethod(Class.class, "getModule");
+			return m.invoke(LombokProcessor.class);
+		} catch (Exception e) {
+			return null;
+		}
+	}
+	
+	private static Object getJdkCompilerModule() {
+		/* call public api: ModuleLayer.boot().findModule("jdk.compiler").get();
+		   but use reflection because we don't want this code to crash on jdk1.7 and below.
+		   In that case, none of this stuff was needed in the first place, so we just exit via
+		   the catch block and do nothing.
+		 */
+		
+		try {
+			Class<?> cModuleLayer = Class.forName("java.lang.ModuleLayer");
+			Method mBoot = cModuleLayer.getDeclaredMethod("boot");
+			Object bootLayer = mBoot.invoke(null);
+			Class<?> cOptional = Class.forName("java.util.Optional");
+			Method mFindModule = cModuleLayer.getDeclaredMethod("findModule", String.class);
+			Object oCompilerO = mFindModule.invoke(bootLayer, "jdk.compiler");
+			return cOptional.getDeclaredMethod("get").invoke(oCompilerO);
+		} catch (Exception e) {
+			return null;
+		}
+	}
+	
+	/** Useful from jdk9 and up; required from jdk16 and up. This code is supposed to gracefully do nothing on jdk8 and below, as this operation isn't needed there. */
+	public static void addOpensForLombok() {
+		Class<?> cModule;
+		try {
+			cModule = Class.forName("java.lang.Module");
+		} catch (ClassNotFoundException e) {
+			return; //jdk8-; this is not needed.
+		}
+		
+		Unsafe unsafe = getUnsafe();
+		Object jdkCompilerModule = getJdkCompilerModule();
+		Object ownModule = getOwnModule();
+		String[] allPkgs = {
+			"com.sun.tools.javac.code",
+			"com.sun.tools.javac.comp",
+			"com.sun.tools.javac.file",
+			"com.sun.tools.javac.main",
+			"com.sun.tools.javac.model",
+			"com.sun.tools.javac.parser",
+			"com.sun.tools.javac.processing",
+			"com.sun.tools.javac.tree",
+			"com.sun.tools.javac.util",
+			"com.sun.tools.javac.jvm",
+		};
+		
+		try {
+			Method m = cModule.getDeclaredMethod("implAddOpens", String.class, cModule);
+			long firstFieldOffset = getFirstFieldOffset(unsafe);
+			unsafe.putBooleanVolatile(m, firstFieldOffset, true);
+			for (String p : allPkgs) m.invoke(jdkCompilerModule, p, ownModule);
+		} catch (Exception ignore) {}
+	}
+	
+	private static long getFirstFieldOffset(Unsafe unsafe) {
+		try {
+			return unsafe.objectFieldOffset(Parent.class.getDeclaredField("first"));
+		} catch (NoSuchFieldException e) {
+			// can't happen.
+			throw new RuntimeException(e);
+		} catch (SecurityException e) {
+			// can't happen
+			throw new RuntimeException(e);
+		}
+	}
+	
+	private static Unsafe getUnsafe() {
+		try {
+			Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
+			theUnsafe.setAccessible(true);
+			return (Unsafe) theUnsafe.get(null);
+		} catch (Exception e) {
+			return null;
+		}
+	}
+	
 	/**
 	 * This class returns the given filer as a JavacFiler. In case the filer is no
 	 * JavacFiler (e.g. the Gradle IncrementalFiler), its "delegate" field is used to get the JavacFiler
@@ -442,11 +544,12 @@ public class LombokProcessor extends AbstractProcessor {
 		
 		// try to find a "delegate" field in the object, and use this to check for a JavacFiler
 		for (Class<?> filerClass = filer.getClass(); filerClass != null; filerClass = filerClass.getSuperclass()) {
-			try {
-				return getJavacFiler(tryGetDelegateField(filerClass, filer));
-			} catch (final Exception e) {
-				// delegate field was not found, try on superclass
-			}
+			Object delegate = tryGetDelegateField(filerClass, filer);
+			if (delegate == null) delegate = tryGetProxyDelegateToField(filerClass, filer);
+			if (delegate == null) delegate = tryGetFilerField(filerClass, filer);
+			
+			if (delegate != null) return getJavacFiler(delegate);
+			// delegate field was not found, try on superclass
 		}
 		
 		processingEnv.getMessager().printMessage(Kind.WARNING,
@@ -454,7 +557,48 @@ public class LombokProcessor extends AbstractProcessor {
 		return null;
 	}
 
-	private Object tryGetDelegateField(Class<?> delegateClass, Object instance) throws Exception {
-		return Permit.getField(delegateClass, "delegate").get(instance);
+	/**
+	 * Gradle incremental processing
+	 */
+	private Object tryGetDelegateField(Class<?> delegateClass, Object instance) {
+		try {
+			return Permit.getField(delegateClass, "delegate").get(instance);
+		} catch (Exception e) {
+			return null;
+		}
+	}
+	
+	/**
+	 * Kotlin incremental processing
+	 */
+	private Object tryGetProcessingEnvField(Class<?> delegateClass, Object instance) {
+		try {
+			return Permit.getField(delegateClass, "processingEnv").get(instance);
+		} catch (Exception e) {
+			return null;
+		}
+	}
+	
+	/**
+	 * Kotlin incremental processing
+	 */
+	private Object tryGetFilerField(Class<?> delegateClass, Object instance) {
+		try {
+			return Permit.getField(delegateClass, "filer").get(instance);
+		} catch (Exception e) {
+			return null;
+		}
+	}
+	
+	/**
+	 * IntelliJ IDEA >= 2020.3
+	 */
+	private Object tryGetProxyDelegateToField(Class<?> delegateClass, Object instance) {
+		try {
+			InvocationHandler handler = Proxy.getInvocationHandler(instance);
+			return Permit.getField(handler.getClass(), "val$delegateTo").get(handler);
+		} catch (Exception e) {
+			return null;
+		}
 	}
 }

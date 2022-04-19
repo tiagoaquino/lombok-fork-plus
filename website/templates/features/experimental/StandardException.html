@@ -1,0 +1,55 @@
+<#import "../_features.html" as f>
+
+<@f.scaffold title="@StandardException"
+	logline="TODO">
+	<@f.history>
+		<p>
+			<code>@StandardException</code> was introduced as an experimental feature in lombok v1.18.21.
+		</p>
+	</@f.history>
+
+	<@f.overview>
+		<p>
+			Put this annotation on your own exception types (new classes that <code>extends Exception</code> or anything else that inherits from <code>Throwable</code>). This annotation will then generate up to 4 constructors:
+		</p><ul>
+			<li>A no-args constructor (<code>MyException()</code>), representing no message, and no cause.</li>
+			<li>A message-only constructor (<code>MyException(String message)</code>), representing the provided message, and no cause.</li>
+			<li>A cause-only constructor (<code>MyException(Throwable cause)</code>), which will copy the message from the cause, if there is one, and uses the provided cause.</li>
+			<li>A full constructor (<code>MyException(String message, Throwable cause)</code>).</li>
+		</ul>
+		<p>
+			Each constructor forwards to the full constructor; you can write any or all of these constructors manually in which case lombok
+			will not generate it. The full constructor, if it needs to be generated, will invoke <code>super(message);</code> and will then
+			invoke <code>super.initCause(cause);</code> if the cause is not null.
+		</p><p>
+			There are few reasons <em>not</em> to put this annotation on all your custom exceptions.
+		</p>
+	</@f.overview>
+
+	<@f.snippets name="StandardException" />
+
+	<@f.confKeys>
+		<dt>
+			<code>lombok.standardException.addConstructorProperties</code> = [<code>true</code> | <code>false</code>] (default: <code>false</code>)
+		</dt><dt>
+			<code>lombok.standardException.flagUsage</code> = [<code>warning</code> | <code>error</code>] (default: not set)
+		</dt><dd>
+			Lombok will flag any usage of <code>@StandardException</code> as a warning or error if configured.
+		</dd>
+	</@f.confKeys>
+
+	<@f.smallPrint>
+		<p>
+			Lombok will not check if you extend an actual exception type.
+		</p><p>
+			Lombok does not require that the class you inherit from has the <code>Throwable cause</code> variants, because not all exceptions
+			have these. However, the `<code>Parent(String message)</code>` constructor as well as the no-args constructor <em>must</em> exist.
+		</p><p>
+			There is a very slight functional difference: Normally, invoking <code>new SomeException(message, null)</code> will initialize
+			the cause to be <em>no cause</em>, and this cannot be later changed by invoking <code>initCause</code>. However, lombok's
+			standard exceptions <strong>do</strong> let you overwrite an explicit no-cause with <code>initCause</code> later.
+		</p><p>
+			A second slight functional difference: Normally, invoking <code>new SomeException(cause)</code>, if implemented as <code>super(cause);</code>, will set the message to be equal to the message of the cause. However, lombok does not do this - it leaves the exception as having no message at all. We think inheriting the message is fundamentally wrong - messages are not guaranteed to be sensible in the absence of the context of the exception-type. The cause ought to be listed anywhere where it is relevant; if you are using messages as direct user feedback (which is rare, in the java community), <code>@StandardException</code> can't really help you anyway; the infrastructure of e.g. <code>getLocalizedMessage()</code> is too complicated.
+		</p>
+	</@f.smallPrint>
+</@f.scaffold>

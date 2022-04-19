@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2020 The Project Lombok Authors.
+ * Copyright (C) 2015-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -112,14 +112,15 @@ abstract class EclipseJavaUtilListSetSingularizer extends EclipseJavaUtilSingula
 		thisDotField.receiver = new ThisReference(0, 0);
 		FieldReference thisDotField2 = new FieldReference(data.getPluralName(), 0L);
 		thisDotField2.receiver = new ThisReference(0, 0);
-		md.selector = HandlerUtil.buildAccessorName("clear", new String(data.getPluralName())).toCharArray();
+		md.selector = HandlerUtil.buildAccessorName(builderType, "clear", new String(data.getPluralName())).toCharArray();
 		MessageSend clearMsg = new MessageSend();
 		clearMsg.receiver = thisDotField2;
 		clearMsg.selector = "clear".toCharArray();
 		Statement clearStatement = new IfStatement(new EqualExpression(thisDotField, new NullLiteral(0, 0), OperatorIds.NOT_EQUAL), clearMsg, 0, 0);
 		md.statements = returnStatement != null ? new Statement[] {clearStatement, returnStatement} : new Statement[] {clearStatement};
 		md.returnType = returnType;
-		md.annotations = generateSelfReturnAnnotations(deprecate, cfv, data.getSource());
+		addCheckerFrameworkReturnsReceiver(md.returnType, data.getSource(), cfv);
+		md.annotations = generateSelfReturnAnnotations(deprecate, data.getSource());
 		
 		data.setGeneratedByRecursive(md);
 		if (returnStatement != null) createRelevantNonNullAnnotation(builderType, md);
@@ -151,9 +152,12 @@ abstract class EclipseJavaUtilListSetSingularizer extends EclipseJavaUtilSingula
 		param.annotations = typeUseAnns;
 		md.arguments = new Argument[] {param};
 		md.returnType = returnType;
-		char[] prefixedSingularName = data.getSetterPrefix().length == 0 ? data.getSingularName() : HandlerUtil.buildAccessorName(new String(data.getSetterPrefix()), new String(data.getSingularName())).toCharArray();
-		md.selector = fluent ? prefixedSingularName : HandlerUtil.buildAccessorName("add", new String(data.getSingularName())).toCharArray();
-		md.annotations = generateSelfReturnAnnotations(deprecate, cfv, data.getSource());
+		addCheckerFrameworkReturnsReceiver(md.returnType, data.getSource(), cfv);
+		char[] prefixedSingularName = data.getSetterPrefix().length == 0 ? data.getSingularName() : HandlerUtil.buildAccessorName(builderType, new String(data.getSetterPrefix()), new String(data.getSingularName())).toCharArray();
+		md.selector = fluent ? prefixedSingularName : HandlerUtil.buildAccessorName(builderType, "add", new String(data.getSingularName())).toCharArray();
+		Annotation[] selfReturnAnnotations = generateSelfReturnAnnotations(deprecate, data.getSource());
+		Annotation[] copyToSetterAnnotations = copyAnnotations(md, findCopyableToBuilderSingularSetterAnnotations(data.getAnnotation().up()));
+		md.annotations = concat(selfReturnAnnotations, copyToSetterAnnotations, Annotation.class);
 		
 		if (returnStatement != null) createRelevantNonNullAnnotation(builderType, md);
 		data.setGeneratedByRecursive(md);
@@ -180,19 +184,26 @@ abstract class EclipseJavaUtilListSetSingularizer extends EclipseJavaUtilSingula
 		paramType = addTypeArgs(1, true, builderType, paramType, data.getTypeArgs());
 		Argument param = new Argument(data.getPluralName(), 0, paramType, ClassFileConstants.AccFinal);
 		
-		nullBehaviorize(builderType, data, statements, param);
+		nullBehaviorize(builderType, data, statements, param, md);
 		if (returnStatement != null) statements.add(returnStatement);
 		
 		md.statements = statements.toArray(new Statement[0]);
 		
 		md.arguments = new Argument[] {param};
 		md.returnType = returnType;
-		char[] prefixedSelector = data.getSetterPrefix().length == 0 ? data.getPluralName() : HandlerUtil.buildAccessorName(new String(data.getSetterPrefix()), new String(data.getPluralName())).toCharArray();
-		md.selector = fluent ? prefixedSelector : HandlerUtil.buildAccessorName("addAll", new String(data.getPluralName())).toCharArray();
-		md.annotations = generateSelfReturnAnnotations(deprecate, cfv, data.getSource());
+		addCheckerFrameworkReturnsReceiver(md.returnType, data.getSource(), cfv);
+		char[] prefixedSelector = data.getSetterPrefix().length == 0 ? data.getPluralName() : HandlerUtil.buildAccessorName(builderType, new String(data.getSetterPrefix()), new String(data.getPluralName())).toCharArray();
+		md.selector = fluent ? prefixedSelector : HandlerUtil.buildAccessorName(builderType, "addAll", new String(data.getPluralName())).toCharArray();
+		Annotation[] selfReturnAnnotations = generateSelfReturnAnnotations(deprecate, data.getSource());
+		Annotation[] copyToSetterAnnotations = copyAnnotations(md, findCopyableToSetterAnnotations(data.getAnnotation().up()));
+		md.annotations = concat(selfReturnAnnotations, copyToSetterAnnotations, Annotation.class);
 		
 		if (returnStatement != null) createRelevantNonNullAnnotation(builderType, md);
 		data.setGeneratedByRecursive(md);
 		injectMethod(builderType, md);
+	}
+	
+	@Override protected int getTypeArgumentsCount() {
+		return 1;
 	}
 }

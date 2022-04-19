@@ -84,7 +84,7 @@
 			can be included. We suggest you put this in the root of your workspace directory.
 		</p><p id="addNullAnnotations">
 			Lombok can add nullity annotations (usually called <code>@NonNull</code> and <code>@Nullable</code>) whenever it makes sense to do so; think of generated <a href="ToString"><code>toString</code></a> and <a href="with"><code>withX</code> methods (these never return null), or the parameter of a generated <a href="EqualsAndHashCode"><code>equals</code></a> method, which is allowed to be null, and requires such an annotation if you've set up your IDE for strict null checks as well as 'parameters are non-null by default'. There are many such libraries; you must tell lombok which one to use. By default, no such annotations are added. Enable this feature with:
-			<ol class="snippet example oneLiner">
+			<ol class="snippet example oneliner">
 				<li><code>lombok.addNullAnnotations = <em>&lt;flavor&gt;</em></code></li>
 			</ol>
 			Many <em>flavors</em> are available: <code>javax</code> (=JSR305; not recommended), <code>eclipse</code>, <code>jetbrains</code>, <code>netbeans</code>, <code>androidx</code>, <code>android.support</code> (deprecated within android), <code>checkerframework</code> (recommended), <code>findbugs</code>, <code>spring</code>, <code>jml</code>, or define your own via <code>CUSTOM:fully.qualified.NonNullAnnotation:fully.qualified.NullableAnnotation</code>; if your nullity annotation is solely of the type use style (it annotates types, such as eclipse's and checkerframework's offerings, versus annotating methods and parameters), the format is <code>CUSTOM:TYPE_USE:nonnullanno:nullableanno</code>.<br />
@@ -99,6 +99,11 @@
 			Lombok can add the <code>@SuppressFBWarnings</code> annotation which is useful if you want to run <a href="http://findbugs.sourceforge.net/">FindBugs</a> on your class files. To enable this feature, make sure findbugs is on the classpath when you compile, and add the following config key:
 			<ol class="snippet example oneliner">
 				<li><code>lombok.extern.findbugs.addSuppressFBWarnings = true</code></li>
+			</ol>
+		</p><p>
+			Lombok adds the <code>@SuppressWarnings("all")</code> annotation to all generated nodes by default. This can be turned off which is useful if you want to use static code analyzers like <a href="https://checkerframework.org/">Checker Framework</a>.
+			<ol class="snippet example oneliner">
+				<li><code>lombok.addSuppressWarnings = false</code></li>
 			</ol>
 		</p>
 	</@f.featureSection>

@@ -19,12 +19,15 @@ public class SuperBuilderWithGenericsAndToBuilder {
 			@java.lang.SuppressWarnings("all")
 			private static <A> void $fillValuesFromInstanceIntoBuilder(final SuperBuilderWithGenericsAndToBuilder.Parent<A> instance, final SuperBuilderWithGenericsAndToBuilder.Parent.ParentBuilder<A, ?, ?> b) {
 				b.field1(instance.field1);
-				b.items(instance.items == null ? java.util.Collections.emptyMap() : instance.items);
+				b.items(instance.items == null ? java.util.Collections.<Integer, String>emptyMap() : instance.items);
 			}
 			@java.lang.SuppressWarnings("all")
 			protected abstract B self();
 			@java.lang.SuppressWarnings("all")
 			public abstract C build();
+			/**
+			 * @return {@code this}.
+			 */
 			@java.lang.SuppressWarnings("all")
 			public B field1(final A field1) {
 				this.field1 = field1;
@@ -135,6 +138,9 @@ public class SuperBuilderWithGenericsAndToBuilder {
 			@java.lang.Override
 			@java.lang.SuppressWarnings("all")
 			public abstract C build();
+			/**
+			 * @return {@code this}.
+			 */
 			@java.lang.SuppressWarnings("all")
 			public B field3(final double field3) {
 				this.field3 = field3;

@@ -3,7 +3,7 @@
 <@f.scaffold title="@ToString" logline="No need to start a debugger to see your fields: Just let lombok generate a <code>toString</code> for you!">
 	<@f.overview>
 		<p>
-			Any class definition may be annotated with <code>@ToString</code> to let lombok generate an implementation of the <code>toString()</code> method. By default, it'll print your class name, along with each field, in order, separated by commas.
+			Annotating a class with <code>@ToString</code> will cause lombok to generate an implementation of the <code>toString()</code> method. You use configuration options to specify whether field names should be included but otherwise the format is fixed: the class name followed by parentheses containing fields separated by commas, e.g. <code>MyClass(foo=123, bar=234)</code>.
 		</p><p>
 			By setting the <code>includeFieldNames</code> parameter to <em>true</em> you can add some clarity (but also quite some length) to the output of the <code>toString()</code> method.
 		</p><p>
@@ -32,6 +32,11 @@
 			<code>lombok.toString.callSuper</code> = [<code>call</code> | <code>skip</code> | <code>warn</code>] (default: skip)
 		</dt><dd>
 			If set to <code>call</code>, lombok will generate calls to the superclass implementation of <code>toString</code> if your class extends something. If set to <code>skip</code> no such call is generated. If set to <code>warn</code> no such call is generated either, but lombok does generate a warning to tell you about it.
+		</dd><dt>
+			<code>lombok.toString.onlyExplicitlyIncluded</code> = [<code>true</code> | <code>false</code>] (default: false)
+		</dt><dd>
+			If set to <code>false</code> (default), all fields (unless <code>static</code>, name starts with a dollar, or otherwise excluded for obvious reasons) serve as the default set of things to include in the toString, modifiable by using the <code>@ToString.Exclude</code> and <code>@ToString.Include</code> options.
+			If set to <code>true</code>, nothing is included unless explicitly marked with <code>@ToString.Include</code>.
 		</dd><dt>
 			<code>lombok.toString.flagUsage</code> = [<code>warning</code> | <code>error</code>] (default: not set)
 		</dt><dd>

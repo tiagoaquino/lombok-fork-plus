@@ -1,0 +1,315 @@
+<!--
+ Copyright (C) 2020-2022 The Project Lombok Authors.
+  
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+  
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+  
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+  THE SOFTWARE.
+-->
+<project name="lombok.compile" default="dist" xmlns:ivy="antlib:com.zwitserloot.ivyplusplus" basedir="..">
+	<description>
+This buildfile is part of projectlombok.org. It takes care of compiling and building lombok itself.
+	</description>
+	
+	<property name="mapstruct-binding.version" value="0.2.0" />
+	
+	<!-- compiles just 'version.java' and runs the produced class file, setting up the various version properties -->
+	<target name="version" depends="ipp.setup, deps.jdk-runtime, -setup.build" description="Shows the version number" unless="lombok.version">
+		<ivy:compile destdir="build/lombok-version" source="1.5" target="1.5" ecj="true" nowarn="true">
+			<bootclasspath path="${jdk6-rt.loc}" />
+			<src path="src/core" />
+			<include name="lombok/core/Version.java" />
+		</ivy:compile>
+		<java
+			classname="lombok.core.Version"
+			classpath="build/lombok-version"
+			failonerror="true"
+			output="build/version.txt">
+			<arg value="full" />
+		</java>
+		<ivy:loadversion property="lombok.fullversion" file="build/version.txt" />
+		<java
+			classname="lombok.core.Version"
+			classpath="build/lombok-version"
+			failonerror="true"
+			output="build/version.txt" />
+		<ivy:loadversion property="lombok.version" file="build/version.txt" />
+		<echo level="info">Lombok version: ${lombok.version} (${lombok.fullversion})</echo>
+	</target>
+	
+	<property name="packing.basedirs" value="build/lombok-transplants,build/lombok-utils,build/lombok-utils6,build/lombok-main,build/lombok-main8,build/lombok-deps" />
+	<loadresource property="packing.basedirs.colon">
+		<propertyresource name="packing.basedirs" />
+		<filterchain><tokenfilter>
+			<filetokenizer/>
+			<replacestring from="," to=":" />
+		</tokenfilter></filterchain>
+	</loadresource>
+	<path id="packing.basedirs.path">
+		<pathelement path="${packing.basedirs.colon}" />
+	</path>
+	
+	<target name="create.spiProcessor" depends="version, -setup.build" description="Compiles the services file generating processor">
+		<ivy:compile destdir="build/spiProcessor" source="1.8" target="1.8" ecj="true">
+			<src path="src/spiProcessor" />
+			<classpath location="build/spiProcessor" />
+		</ivy:compile>
+		<mkdir dir="build/spiProcessor/META-INF/services" />
+		<echo file="build/spiProcessor/META-INF/services/javax.annotation.processing.Processor">lombok.spi.SpiProcessor</echo>
+		<jar destfile="dist/spiProcessor.jar">
+			<fileset dir="build/spiProcessor" />
+		</jar>
+	</target>
+	
+	<target name="create.mavenEcjBootstrapAgent" depends="-setup.build" description="Compiles the Maven ECJ bootstrap agent">
+		<ivy:compile destdir="build/mavenEcjBootstrapAgent" source="1.6" target="1.6" ecj="true">
+			<bootclasspath path="${jdk6-rt.loc}" />
+			<src path="src/mavenEcjBootstrapAgent" />
+		</ivy:compile>
+		<mkdir dir="build/lombok-main/lombok/launch" />
+		<jar destfile="build/lombok-main/lombok/launch/mavenEcjBootstrapAgent.jar" basedir="build/mavenEcjBootstrapAgent">
+			<manifest>
+				<attribute name="Premain-Class" value="lombok.launch.AgentBootstrap" />
+				<attribute name="Can-Redefine-Classes" value="true" />
+			</manifest>
+		</jar>
+	</target>
+	
+	<target name="compile" depends="version, deps, -setup.build, create.spiProcessor, create.mavenEcjBootstrapAgent" description="Compiles the code">
+		<!--
+			1. Compile stubs.
+			2. Compile transplants.
+			3. Compile lombok-utils.
+			4. Compile lombok. -->
+		
+		<!--
+			ant includes the destination dir on the classpath (and there are good reasons to do this), but that also means
+			the bleeding edge lombok from the previous build is run (as lombok is an annotation processor), which means if
+			there are bugs in it, you can't compile anymore until you 'ant clean'. That's very undesirable. so we kill the processor,
+			which stops lombok from running. We re-create the file at the end of this target. -->
+		<delete file="build/lombok-main/META-INF/services/javax.annotation.processing.Processor" quiet="true" />
+		
+		<!--
+			first, compile stubs. Lombok needs to produce class files that run in a wide variety of JDK, javac, and ecj/eclipse versions.
+			Instead of depending on conflicting versions, we write stub files; just enough for compilation to succeed.
+			
+			However, the stubs themselves also have a ton of dependencies; to avoid _that_, we have stubs for stubs, too! -->
+		<ivy:compile destdir="build/stubsstubs" source="1.5" target="1.5" ecj="true">
+			<bootclasspath path="${jdk6-rt.loc}" />
+			<src path="src/stubsstubs" />
+		</ivy:compile>
+		<ivy:compile destdir="build/stubs" source="1.5" target="1.5" ecj="true">
+			<bootclasspath path="${jdk6-rt.loc}" />
+			<src path="src/stubs" />
+			<src path="src/javac-only-stubs" />
+			<classpath location="build/stubsstubs" />
+			<classpath location="build/stubs" />
+		</ivy:compile>
+		
+		<!--
+			compile the eclipse agent's transplant sources.
+			This is code that is not actually run within lombok; it is bytecode that the eclipse agent extracts from the class file
+			within its own jar and injects it into the eclipse classes as a patch.
+			
+			To keep the project clean of warnings, a few SuppressWarnings have been added, but we don't want them there during compilation,
+			so remove them first.
+			
+			For legacy eclipse support we include them in both class file format 48 (java 1.4) and 50 (java 1.6), though in practice
+			we don't support eclipses that run on anything below java 1.8 anymore. -->
+		<mkdir dir="build/transformedSources" />
+		<copy todir="build/transformedSources">
+			<fileset dir="src/eclipseAgent">
+				<include name="**/*Transplants.java" />
+			</fileset>
+			<filterchain>
+				<lineContainsRegExp negate="true">
+					<regexp pattern="^\s*@SuppressWarnings.*$" />
+				</lineContainsRegExp>
+			</filterchain>
+		</copy>
+		
+		<ivy:compile destdir="build/lombok-transplants" source="1.4" target="1.4" ecj="true">
+			<bootclasspath location="build/stubs" />
+			<bootclasspath path="${jdk6-rt.loc}" />
+			<src path="build/transformedSources" />
+		</ivy:compile>
+		
+		<ivy:compile destdir="build/lombok-transplants/Class50" source="1.4" target="1.6" ecj="true">
+			<bootclasspath location="build/stubs" />
+			<bootclasspath path="${jdk6-rt.loc}" />
+			<src path="build/transformedSources" />
+		</ivy:compile>
+		
+		<ivy:compile destdir="build/lombok-utils" source="1.5" target="1.5" ecj="true">
+			<bootclasspath location="build/stubs" />
+			<bootclasspath path="${jdk6-rt.loc}" />
+			<src path="src/utils" />
+			<exclude name="lombok/javac/**" />
+			<classpath location="build/lombok-utils" />
+			<classpath refid="cp.javac6" />
+			<classpath refid="cp.ecj8" />
+		</ivy:compile>
+		<ivy:compile destdir="build/lombok-utils6" source="1.6" target="1.6" ecj="true">
+			<bootclasspath location="build/stubs" />
+			<bootclasspath path="${jdk6-rt.loc}" />
+			<src path="src/utils" />
+			<include name="lombok/javac/**" />
+			<classpath refid="cp.javac6" />
+			<classpath path="build/lombok-utils:build/lombok-utils6" />
+		</ivy:compile>
+		
+		<!--
+			compile lombok proper. We target java 1.6 to be as compatible with older releases as we can, using a JDK6 boot rt to ensure we don't
+			use API that didn't exist in those versions yet. -->
+		<ivy:compile destdir="build/lombok-main" source="1.6" target="1.6" ecj="true" nowarn="true">
+			<bootclasspath location="build/stubs" />
+			<bootclasspath path="${jdk6-rt.loc}" />
+			<src path="src/launch" />
+			<src path="src/core" />
+			<src path="src/installer" />
+			<src path="src/eclipseAgent" />
+			<src path="src/delombok" />
+			<exclude name="**/*Transplants.java" />
+			<classpath refid="cp.build" />
+			<classpath refid="cp.eclipse-oxygen" />
+			<classpath refid="cp.javac6" />
+			<classpath path="build/lombok-utils:build/lombok-utils6:build/lombok-main:dist/spiProcessor.jar" />
+			<annotationProcessor jar="dist/spiProcessor.jar" processor="lombok.spi.SpiProcessor" />
+		</ivy:compile>
+		
+		<!-- This is really part of the eclipse agent, but references lombok, so that had to be compiled first -->
+		<ivy:compile destdir="build/lombok-main/Class50" source="1.5" target="1.6" ecj="true">
+			<bootclasspath location="build/stubs" />
+			<bootclasspath path="${jdk6-rt.loc}" />
+			<src path="src/eclipseAgent" />
+			<include name="lombok/launch/PatchFixesHider.java" />
+			<classpath refid="cp.build" />
+			<classpath refid="cp.eclipse-oxygen" />
+			<classpath path="build/lombok-utils:build/lombok-utils6:build/lombok-main" />
+		</ivy:compile>
+		
+		<!--
+			a couple of classes to cater to the bits of javac8+ that require j8 language constructs/API types; the main lombok
+			compile refers to these via reflection -->
+		<ivy:compile destdir="build/lombok-main8" source="1.8" target="1.8" ecj="true" nowarn="true" includesystembootclasspath="true">
+			<bootclasspath location="build/stubs" />
+			<src path="src/core8" />
+			<classpath refid="cp.javac8" />
+			<classpath path="build/lombok-main:build/lombok-main8:build" />
+		</ivy:compile>
+		
+		<!--
+			We also act as a jigsaw module so that module-based compile runs can use module-style dependency management. Obviously,
+			that bit we can only compile with jdk9+. -->
+		<ivy:compile destdir="build/lombok-main" release="9">
+			<src path="src/core9" />
+			<compilerarg value="-Xlint:none" />
+			<classpath refid="cp.build" />
+		</ivy:compile>
+		
+		<mkdir dir="build/lombok-main/META-INF/services" />
+		<echo file="build/lombok-main/META-INF/services/javax.annotation.processing.Processor">lombok.launch.AnnotationProcessorHider$AnnotationProcessor
+lombok.launch.AnnotationProcessorHider$ClaimingProcessor</echo>
+		<mkdir dir="build/lombok-main/META-INF/gradle" />
+		<echo file="build/lombok-main/META-INF/gradle/incremental.annotation.processors">lombok.launch.AnnotationProcessorHider$AnnotationProcessor,isolating
+lombok.launch.AnnotationProcessorHider$ClaimingProcessor,isolating</echo>
+	</target>
+	
+	<!-- compiles the bit of API from mapstruct that lombok compiles against. -->
+	<target name="mapstruct.compile" depends="-setup.build">
+		<mkdir dir="build/mapstruct" />
+		<ivy:compile destdir="build/mapstruct" release="8">
+			<src path="src/j9stubs" />
+		</ivy:compile>
+	</target>
+	
+	<target name="-deps.unpack" depends="deps">
+		<ivy:cachedunjar dest="build/lombok-deps" marker="build/unpackDeps.marker">
+			<path refid="cp.stripe" />
+		</ivy:cachedunjar>
+	</target>
+	
+	<target name="dist" depends="version, compile, latest-changes.build, mapstruct.compile, -deps.unpack" description="Builds the 'everything' lombok.jar">
+		<mkdir dir="dist" />
+		<copy file="doc/changelog.markdown" tofile="build/changelog.txt" />
+		<tstamp><format property="release.timestamp" pattern="yyyy-MM-dd" /></tstamp>
+		<echo file="release-timestamp.txt">${release.timestamp}</echo>
+		
+		<!-- the ant jar task doesn't quite let us do all we need to, so build with zip, then do the jar bits afterwards -->
+		<zip destfile="dist/lombok-${lombok.version}.jar">
+			<fileset dir="build" includes="changelog.txt, latestchanges.html" />
+			<fileset dir="." includes="README.md, LICENSE, AUTHORS, release-timestamp.txt" />
+			
+			<!--
+				most class files that need to be in the lombok distro are loaded in a separate class loader;
+				we want any project that includes lombok.jar as a dependency to NOT get a bunch of otherwise public
+				lombok classes served up in autocomplete dialogs, amongst other reasons.
+				
+				Thus, we list here only the few class files that serve as 'entry points'. -->
+			<patternset id="packing.entrypoints">
+				<include name="module-info.class" />
+				<include name="lombok/*.class" />
+				<include name="lombok/experimental/**" />
+				<include name="lombok/extern/**" />
+				<include name="lombok/launch/**" />
+				<include name="lombok/delombok/ant/Tasks*" />
+				<include name="lombok/javac/apt/Processor.class" />
+				<include name="lombok/META-INF/**" />
+			</patternset>
+			
+			<fileset dir="build/lombok-main"><patternset refid="packing.entrypoints" /></fileset>
+			
+			<!-- now include everything else but renamed for the shadowloader system, to make these classes invisible to other projects. -->
+			<patternset id="packing.shadowed">
+				<exclude name="com/sun/tools/javac/**" />
+				<invert><patternset refid="packing.entrypoints" /></invert>
+			</patternset>
+			<mappedresources>
+				<multirootfileset basedirs="${packing.basedirs}">
+					<patternset refid="packing.shadowed" />
+				</multirootfileset>
+				<firstmatchmapper>
+					<globmapper from="*.class" to="*.SCL.lombok" />
+					<identitymapper />
+				</firstmatchmapper>
+			</mappedresources>
+		</zip>
+		
+		<!-- ... but manifest is not part of the ant zip task, so do that with the jar task -->
+		<jar destfile="dist/lombok-${lombok.version}.jar" update="true">
+			<manifest>
+				<attribute name="Premain-Class" value="lombok.launch.Agent" />
+				<attribute name="Agent-Class" value="lombok.launch.Agent" />
+				<attribute name="Can-Redefine-Classes" value="true" />
+				<attribute name="Main-Class" value="lombok.launch.Main" />
+				<attribute name="Lombok-Version" value="${lombok.version}" />
+				<attribute name="Automatic-Module-Name" value="lombok" />
+			</manifest>
+		</jar>
+		<delete file="release-timestamp.txt" />
+		<copy overwrite="true" tofile="dist/lombok.jar" file="dist/lombok-${lombok.version}.jar" />
+		<property name="lombok.dist.built" value="true" />
+	</target>
+	
+	<target name="compile.support" depends="ipp.setup, deps, -setup.build" description="Compiles code that is used solely by the build, such as website and IDE project creation">
+		<ivy:compile includeDestClasses="false" includeantruntime="false" destdir="build/support" debug="on" source="1.8" target="1.8">
+			<compilerarg value="-proc:none" />
+			<compilerarg value="-Xlint:-options" />
+			<classpath refid="cp.buildtools" />
+			<src path="src/support" />
+		</ivy:compile>
+	</target>
+</project>

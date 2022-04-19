@@ -34,7 +34,6 @@ import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
 import java.io.Writer;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URI;
 import java.net.URLDecoder;
@@ -46,12 +45,14 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import javax.annotation.processing.AbstractProcessor;
 import javax.tools.DiagnosticListener;
 import javax.tools.JavaFileManager;
 import javax.tools.JavaFileObject;
@@ -59,6 +60,7 @@ import javax.tools.JavaFileObject;
 import lombok.Lombok;
 import lombok.javac.CommentCatcher;
 import lombok.javac.Javac;
+import lombok.javac.JavacAugments;
 import lombok.javac.LombokOptions;
 import lombok.javac.apt.LombokProcessor;
 import lombok.permit.Permit;
@@ -68,8 +70,11 @@ import com.sun.tools.javac.comp.Todo;
 import com.sun.tools.javac.file.BaseFileManager;
 import com.sun.tools.javac.main.Arguments;
 import com.sun.tools.javac.main.JavaCompiler;
+import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
+import com.sun.tools.javac.tree.JCTree.JCImport;
 import com.sun.tools.javac.util.Context;
+import com.sun.tools.javac.util.ListBuffer;
 import com.zwitserloot.cmdreader.CmdReader;
 import com.zwitserloot.cmdreader.Description;
 import com.zwitserloot.cmdreader.Excludes;
@@ -98,6 +103,7 @@ public class Delombok {
 	private LinkedHashMap<File, File> fileToBase = new LinkedHashMap<File, File>();
 	private List<File> filesToParse = new ArrayList<File>();
 	private Map<String, String> formatPrefs = new HashMap<String, String>();
+	private List<AbstractProcessor> additionalAnnotationProcessors = new ArrayList<AbstractProcessor>();
 	
 	/** If null, output to standard out. */
 	private File output = null;
@@ -164,6 +170,10 @@ public class Delombok {
 		private boolean disablePreview;
 		
 		private boolean help;
+	}
+	
+	static {
+		LombokProcessor.addOpensForLombok();
 	}
 	
 	private static String indentAndWordbreak(String in, int indent, int maxLen) {
@@ -643,6 +653,10 @@ public class Delombok {
 		fileToBase.put(f, base);
 	}
 	
+	public void addAdditionalAnnotationProcessor(AbstractProcessor processor) {
+		additionalAnnotationProcessors.add(processor);
+	}
+	
 	private static <T> com.sun.tools.javac.util.List<T> toJavacList(List<T> list) {
 		com.sun.tools.javac.util.List<T> out = com.sun.tools.javac.util.List.nil();
 		ListIterator<T> li = list.listIterator(list.size());
@@ -701,8 +715,12 @@ public class Delombok {
 			
 			if (!disablePreview && Javac.getJavaCompilerVersion() >= 11) argsList.add("--enable-preview");
 			
-			String[] argv = argsList.toArray(new String[0]);
-			args.init("javac", argv);
+			if (Javac.getJavaCompilerVersion() < 15) {
+				String[] argv = argsList.toArray(new String[0]);
+				args.init("javac", argv);
+			} else {
+				args.init("javac", argsList);
+			}
 			options.put("diags.legacy", "TRUE");
 			options.put("allowStringFolding", "FALSE");
 		} else {
@@ -715,7 +733,9 @@ public class Delombok {
 		List<JCCompilationUnit> roots = new ArrayList<JCCompilationUnit>();
 		Map<JCCompilationUnit, File> baseMap = new IdentityHashMap<JCCompilationUnit, File>();
 		
-		Set<LombokProcessor> processors = Collections.singleton(new lombok.javac.apt.LombokProcessor());
+		Set<AbstractProcessor> processors = new LinkedHashSet<AbstractProcessor>();
+		processors.add(new lombok.javac.apt.LombokProcessor());
+		processors.addAll(additionalAnnotationProcessors);
 		
 		if (Javac.getJavaCompilerVersion() >= 9) {
 			JavaFileManager jfm_ = context.get(JavaFileManager.class);
@@ -779,6 +799,16 @@ public class Delombok {
 				if (verbose) feedback.printf("File: %s [%s]\n", unit.sourcefile.getName(), "unchanged (skipped)");
 				continue;
 			}
+			ListBuffer<JCTree> newDefs = new ListBuffer<JCTree>();
+			for (JCTree def : unit.defs) {
+				if (def instanceof JCImport) {
+					Boolean b = JavacAugments.JCImport_deletable.get((JCImport) def);
+					if (b == null || !b.booleanValue()) newDefs.append(def);
+				} else {
+					newDefs.append(def);
+				}
+			}
+			unit.defs = newDefs.toList();
 			if (verbose) feedback.printf("File: %s [%s%s]\n", unit.sourcefile.getName(), result.isChanged() ? "delomboked" : "unchanged", force && !options.isChanged(unit) ? " (forced)" : "");
 			Writer rawWriter;
 			if (presetWriter != null) rawWriter = createUnicodeEscapeWriter(presetWriter);
@@ -837,12 +867,8 @@ public class Delombok {
 				}
 			}
 		}
-		try {
-			return attributeMethod.invoke(compiler, arg);
-		} catch (Exception e) {
-			if (e instanceof InvocationTargetException) throw Lombok.sneakyThrow(e.getCause());
-			throw Lombok.sneakyThrow(e);
-		}
+		
+		return Permit.invokeSneaky(attributeMethod, compiler, arg);
 	}
 	
 	private static Method flowMethod;
@@ -859,12 +885,8 @@ public class Delombok {
 				}
 			}
 		}
-		try {
-			flowMethod.invoke(compiler, arg);
-		} catch (Exception e) {
-			if (e instanceof InvocationTargetException) throw Lombok.sneakyThrow(e.getCause());
-			throw Lombok.sneakyThrow(e);
-		}
+		
+		Permit.invokeSneaky(flowMethod, compiler, arg);
 	}
 	
 	private static String canonical(File dir) {

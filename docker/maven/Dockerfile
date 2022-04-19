@@ -1,17 +1,17 @@
-FROM ubuntu:18.04 as downloader
+FROM ubuntu:20.04 as downloader
 
-ARG jdk=13
+ARG jdk=16
 ADD provision/jdk/java-${jdk}.sh provision/jdk/java-${jdk}.sh
 RUN provision/jdk/java-${jdk}.sh
 
 ARG lombokjar=lombok.jar
 ADD https://projectlombok.org/downloads/${lombokjar} /lombok.jar
 
-ARG maven=3.6.1
+ARG maven=3.6.3
 ADD provision/maven/maven-${maven}.sh provision/maven/maven-${maven}.sh
 RUN provision/maven/maven-${maven}.sh
 
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
 COPY --from=downloader /usr/local/apache-maven/ /usr/local/apache-maven/
 COPY --from=downloader /opt/jdk/ /opt/jdk/
@@ -22,7 +22,7 @@ WORKDIR workspace
 
 ADD shared/ ./
 
-ARG jdk=13
+ARG jdk=16
 ADD maven/files/jdk-${jdk} ./
 
 COPY --from=downloader /lombok.jar /workspace/classpath/lombok.jar

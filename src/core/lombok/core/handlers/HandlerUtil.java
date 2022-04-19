@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2020 The Project Lombok Authors.
+ * Copyright (C) 2013-2022 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,6 +27,8 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import lombok.AllArgsConstructor;
 import lombok.ConfigurationKeys;
@@ -44,6 +46,7 @@ import lombok.core.AnnotationValues;
 import lombok.core.JavaIdentifiers;
 import lombok.core.LombokNode;
 import lombok.core.configuration.AllowHelper;
+import lombok.core.configuration.CapitalizationStrategy;
 import lombok.core.configuration.ConfigurationKey;
 import lombok.core.configuration.FlagUsageType;
 import lombok.experimental.Accessors;
@@ -76,41 +79,131 @@ public class HandlerUtil {
 		return 43;
 	}
 	
-	public static final List<String> NONNULL_ANNOTATIONS, BASE_COPYABLE_ANNOTATIONS, COPY_TO_SETTER_ANNOTATIONS;
+	public static final List<String> NONNULL_ANNOTATIONS, BASE_COPYABLE_ANNOTATIONS, COPY_TO_SETTER_ANNOTATIONS, COPY_TO_BUILDER_SINGULAR_SETTER_ANNOTATIONS, JACKSON_COPY_TO_BUILDER_ANNOTATIONS;
 	static {
 		NONNULL_ANNOTATIONS = Collections.unmodifiableList(Arrays.asList(new String[] {
-			"androidx.annotation.NonNull",
+			"android.annotation.NonNull",
 			"android.support.annotation.NonNull",
+			"android.support.annotation.RecentlyNonNull",
+			"androidx.annotation.NonNull",
+			"androidx.annotation.RecentlyNonNull",
+			"com.android.annotations.NonNull",
+			"com.google.firebase.database.annotations.NotNull",
+			"com.google.firebase.internal.NonNull",
+			"com.mongodb.lang.NonNull",
+			"com.sun.istack.NotNull",
 			"com.sun.istack.internal.NotNull",
+			"com.unboundid.util.NotNull",
 			"edu.umd.cs.findbugs.annotations.NonNull",
+			"io.micrometer.core.lang.NonNull",
+			"io.reactivex.annotations.NonNull",
+			"io.reactivex.rxjava3.annotations.NonNull",
 			"javax.annotation.Nonnull",
 			// "javax.validation.constraints.NotNull", // The field might contain a null value until it is persisted.
+			"libcore.util.NonNull",
 			"lombok.NonNull",
+			"org.antlr.v4.runtime.misc.NotNull",
 			"org.checkerframework.checker.nullness.qual.NonNull",
+			"org.checkerframework.checker.nullness.compatqual.NonNullDecl",
+			"org.checkerframework.checker.nullness.compatqual.NonNullType",
+			"org.codehaus.commons.nullanalysis.NotNull",
 			"org.eclipse.jdt.annotation.NonNull",
 			"org.eclipse.jgit.annotations.NonNull",
+			"org.eclipse.lsp4j.jsonrpc.validation.NonNull",
 			"org.jetbrains.annotations.NotNull",
 			"org.jmlspecs.annotation.NonNull",
 			"org.netbeans.api.annotations.common.NonNull",
 			"org.springframework.lang.NonNull",
+			"reactor.util.annotation.NonNull",
 		}));
 		BASE_COPYABLE_ANNOTATIONS = Collections.unmodifiableList(Arrays.asList(new String[] {
-			"androidx.annotation.NonNull",
-			"androidx.annotation.Nullable",
+			"android.annotation.NonNull",
+			"android.annotation.Nullable",
 			"android.support.annotation.NonNull",
 			"android.support.annotation.Nullable",
+			"android.support.annotation.RecentlyNonNull",
+			"android.support.annotation.RecentlyNullable",
+			"androidx.annotation.NonNull",
+			"androidx.annotation.Nullable",
+			"androidx.annotation.RecentlyNonNull",
+			"androidx.annotation.RecentlyNullable",
+			"com.android.annotations.NonNull",
+			"com.android.annotations.Nullable",
+			"com.beust.jcommander.internal.Nullable",
+			"com.google.api.server.spi.config.Nullable",
+			"com.google.firebase.database.annotations.NotNull",
+			"com.google.firebase.database.annotations.Nullable",
+			"com.google.firebase.internal.NonNull",
+			"com.google.firebase.internal.Nullable",
+			"com.google.gerrit.common.Nullable",
+			"com.mongodb.lang.NonNull",
+			"com.mongodb.lang.Nullable",
+			"com.sun.istack.NotNull",
+			"com.sun.istack.Nullable",
+			"com.sun.istack.internal.NotNull",
+			"com.sun.istack.internal.Nullable",
+			"com.unboundid.util.NotNull",
+			"com.unboundid.util.Nullable",
+			"edu.umd.cs.findbugs.annotations.CheckForNull",
 			"edu.umd.cs.findbugs.annotations.NonNull",
 			"edu.umd.cs.findbugs.annotations.Nullable",
+			"edu.umd.cs.findbugs.annotations.PossiblyNull",
 			"edu.umd.cs.findbugs.annotations.UnknownNullness",
+			"io.micrometer.core.lang.NonNull",
+			"io.micrometer.core.lang.Nullable",
+			"io.reactivex.annotations.NonNull",
+			"io.reactivex.annotations.Nullable",
+			"io.reactivex.rxjava3.annotations.NonNull",
+			"io.reactivex.rxjava3.annotations.Nullable",
 			"javax.annotation.CheckForNull",
 			"javax.annotation.Nonnull",
+			"javax.annotation.Nonnull",
 			"javax.annotation.Nullable",
+			"javax.validation.constraints.NotNull",
+			"junitparams.converters.Nullable",
+			"libcore.util.NonNull",
+			"libcore.util.Nullable",
 			"lombok.NonNull",
+			"org.antlr.v4.runtime.misc.NotNull",
+			"org.apache.avro.reflect.Nullable",
+			"org.apache.cxf.jaxrs.ext.Nullable",
+			"org.apache.shindig.common.Nullable",
+			"org.checkerframework.checker.nullness.compatqual.NonNullDecl",
+			"org.checkerframework.checker.nullness.compatqual.NonNullType",
+			"org.checkerframework.checker.nullness.compatqual.NullableDecl",
+			"org.checkerframework.checker.nullness.compatqual.NullableType",
+			"org.checkerframework.checker.nullness.qual.NonNull",
+			"org.checkerframework.checker.nullness.qual.Nullable",
+			"org.codehaus.commons.nullanalysis.NotNull",
+			"org.codehaus.commons.nullanalysis.Nullable",
+			"org.eclipse.jdt.annotation.NonNull",
+			"org.eclipse.jdt.annotation.Nullable",
+			"org.eclipse.jgit.annotations.NonNull",
+			"org.eclipse.jgit.annotations.Nullable",
+			"org.eclipse.lsp4j.jsonrpc.validation.NonNull",
+			"org.jetbrains.annotations.NotNull",
+			"org.jetbrains.annotations.Nullable",
+			"org.jetbrains.annotations.UnknownNullability",
 			"org.jmlspecs.annotation.NonNull",
 			"org.jmlspecs.annotation.Nullable",
+			"org.jspecify.nullness.Nullable",
+			"org.jspecify.nullness.NullnessUnspecified",
+			"org.netbeans.api.annotations.common.CheckForNull",
+			"org.netbeans.api.annotations.common.NonNull",
+			"org.netbeans.api.annotations.common.NullAllowed",
+			"org.netbeans.api.annotations.common.NullUnknown",
+			"org.springframework.lang.NonNull",
+			"org.springframework.lang.Nullable",
+
+			// Checker Framework annotations.
 			// To update Checker Framework annotations, run:
-			// grep --recursive --files-with-matches -e '^@Target\b.*TYPE_USE' $CHECKERFRAMEWORK/checker/src/main/java  $CHECKERFRAMEWORK/framework/src/main/java | grep '\.java$' | sed 's/.*\/java\//\t\t\t"/' | sed 's/\.java$/",/' | sed 's/\//./g' | sort
+			// grep --recursive --files-with-matches -e '^@Target\b.*TYPE_USE' $CHECKERFRAMEWORK/checker/src/main/java $CHECKERFRAMEWORK/checker-qual/src/main/java $CHECKERFRAMEWORK/checker-util/src/main/java $CHECKERFRAMEWORK/framework/src/main/java | grep '\.java$' | sed 's/.*\/java\//\t\t\t"/' | sed 's/\.java$/",/' | sed 's/\//./g' | sort
 			// Only add new annotations, do not remove annotations that have been removed from the lastest version of the Checker Framework.
+			"org.checkerframework.checker.builder.qual.CalledMethods",
+			"org.checkerframework.checker.builder.qual.NotCalledMethods",
+			"org.checkerframework.checker.calledmethods.qual.CalledMethods",
+			"org.checkerframework.checker.calledmethods.qual.CalledMethodsBottom",
+			"org.checkerframework.checker.calledmethods.qual.CalledMethodsPredicate",
 			"org.checkerframework.checker.compilermsgs.qual.CompilerMessageKey",
 			"org.checkerframework.checker.compilermsgs.qual.CompilerMessageKeyBottom",
 			"org.checkerframework.checker.compilermsgs.qual.UnknownCompilerMessageKey",
@@ -134,6 +227,7 @@ public class HandlerUtil {
 			"org.checkerframework.checker.formatter.qual.Format",
 			"org.checkerframework.checker.formatter.qual.FormatBottom",
 			"org.checkerframework.checker.formatter.qual.InvalidFormat",
+			"org.checkerframework.checker.formatter.qual.UnknownFormat",
 			"org.checkerframework.checker.guieffect.qual.AlwaysSafe",
 			"org.checkerframework.checker.guieffect.qual.PolyUI",
 			"org.checkerframework.checker.guieffect.qual.UI",
@@ -178,6 +272,7 @@ public class HandlerUtil {
 			"org.checkerframework.checker.index.qual.SubstringIndexFor",
 			"org.checkerframework.checker.index.qual.SubstringIndexUnknown",
 			"org.checkerframework.checker.index.qual.UpperBoundBottom",
+			"org.checkerframework.checker.index.qual.UpperBoundLiteral",
 			"org.checkerframework.checker.index.qual.UpperBoundUnknown",
 			"org.checkerframework.checker.initialization.qual.FBCBottom",
 			"org.checkerframework.checker.initialization.qual.Initialized",
@@ -191,18 +286,21 @@ public class HandlerUtil {
 			"org.checkerframework.checker.lock.qual.GuardedByBottom",
 			"org.checkerframework.checker.lock.qual.GuardedByUnknown",
 			"org.checkerframework.checker.lock.qual.GuardSatisfied",
+			"org.checkerframework.checker.lock.qual.NewObject",
+			"org.checkerframework.checker.mustcall.qual.MustCall",
+			"org.checkerframework.checker.mustcall.qual.MustCallAlias",
+			"org.checkerframework.checker.mustcall.qual.MustCallUnknown",
+			"org.checkerframework.checker.mustcall.qual.PolyMustCall",
 			"org.checkerframework.checker.nullness.qual.KeyFor",
 			"org.checkerframework.checker.nullness.qual.KeyForBottom",
 			"org.checkerframework.checker.nullness.qual.MonotonicNonNull",
 			"org.checkerframework.checker.nullness.qual.NonNull",
-			"org.checkerframework.checker.nullness.qual.NonRaw",
 			"org.checkerframework.checker.nullness.qual.Nullable",
 			"org.checkerframework.checker.nullness.qual.PolyKeyFor",
 			"org.checkerframework.checker.nullness.qual.PolyNull",
-			"org.checkerframework.checker.nullness.qual.PolyRaw",
-			"org.checkerframework.checker.nullness.qual.Raw",
 			"org.checkerframework.checker.nullness.qual.UnknownKeyFor",
 			"org.checkerframework.checker.optional.qual.MaybePresent",
+			"org.checkerframework.checker.optional.qual.OptionalBottom",
 			"org.checkerframework.checker.optional.qual.PolyPresent",
 			"org.checkerframework.checker.optional.qual.Present",
 			"org.checkerframework.checker.propkey.qual.PropertyKey",
@@ -212,29 +310,36 @@ public class HandlerUtil {
 			"org.checkerframework.checker.regex.qual.Regex",
 			"org.checkerframework.checker.regex.qual.RegexBottom",
 			"org.checkerframework.checker.regex.qual.UnknownRegex",
+			"org.checkerframework.checker.signature.qual.ArrayWithoutPackage",
 			"org.checkerframework.checker.signature.qual.BinaryName",
-			"org.checkerframework.checker.signature.qual.BinaryNameInUnnamedPackage",
+			"org.checkerframework.checker.signature.qual.BinaryNameOrPrimitiveType",
+			"org.checkerframework.checker.signature.qual.BinaryNameWithoutPackage",
+			"org.checkerframework.checker.signature.qual.CanonicalName",
+			"org.checkerframework.checker.signature.qual.CanonicalNameAndBinaryName",
+			"org.checkerframework.checker.signature.qual.CanonicalNameOrEmpty",
+			"org.checkerframework.checker.signature.qual.CanonicalNameOrPrimitiveType",
 			"org.checkerframework.checker.signature.qual.ClassGetName",
 			"org.checkerframework.checker.signature.qual.ClassGetSimpleName",
 			"org.checkerframework.checker.signature.qual.DotSeparatedIdentifiers",
+			"org.checkerframework.checker.signature.qual.DotSeparatedIdentifiersOrPrimitiveType",
 			"org.checkerframework.checker.signature.qual.FieldDescriptor",
 			"org.checkerframework.checker.signature.qual.FieldDescriptorForPrimitive",
-			"org.checkerframework.checker.signature.qual.FieldDescriptorForPrimitiveOrArrayInUnnamedPackage",
+			"org.checkerframework.checker.signature.qual.FieldDescriptorWithoutPackage",
 			"org.checkerframework.checker.signature.qual.FqBinaryName",
 			"org.checkerframework.checker.signature.qual.FullyQualifiedName",
 			"org.checkerframework.checker.signature.qual.Identifier",
-			"org.checkerframework.checker.signature.qual.IdentifierOrArray",
+			"org.checkerframework.checker.signature.qual.IdentifierOrPrimitiveType",
 			"org.checkerframework.checker.signature.qual.InternalForm",
 			"org.checkerframework.checker.signature.qual.MethodDescriptor",
 			"org.checkerframework.checker.signature.qual.PolySignature",
+			"org.checkerframework.checker.signature.qual.PrimitiveType",
 			"org.checkerframework.checker.signature.qual.SignatureBottom",
-			"org.checkerframework.checker.signedness.qual.Constant",
-			"org.checkerframework.checker.signedness.qual.PolySignedness",
 			"org.checkerframework.checker.signedness.qual.PolySigned",
 			"org.checkerframework.checker.signedness.qual.Signed",
 			"org.checkerframework.checker.signedness.qual.SignednessBottom",
 			"org.checkerframework.checker.signedness.qual.SignednessGlb",
 			"org.checkerframework.checker.signedness.qual.SignedPositive",
+			"org.checkerframework.checker.signedness.qual.SignedPositiveFromUnsigned",
 			"org.checkerframework.checker.signedness.qual.UnknownSignedness",
 			"org.checkerframework.checker.signedness.qual.Unsigned",
 			"org.checkerframework.checker.tainting.qual.PolyTainted",
@@ -248,37 +353,48 @@ public class HandlerUtil {
 			"org.checkerframework.checker.units.qual.cd",
 			"org.checkerframework.checker.units.qual.Current",
 			"org.checkerframework.checker.units.qual.degrees",
+			"org.checkerframework.checker.units.qual.Force",
 			"org.checkerframework.checker.units.qual.g",
 			"org.checkerframework.checker.units.qual.h",
 			"org.checkerframework.checker.units.qual.K",
 			"org.checkerframework.checker.units.qual.kg",
 			"org.checkerframework.checker.units.qual.km",
 			"org.checkerframework.checker.units.qual.km2",
+			"org.checkerframework.checker.units.qual.km3",
 			"org.checkerframework.checker.units.qual.kmPERh",
+			"org.checkerframework.checker.units.qual.kN",
 			"org.checkerframework.checker.units.qual.Length",
 			"org.checkerframework.checker.units.qual.Luminance",
 			"org.checkerframework.checker.units.qual.m",
 			"org.checkerframework.checker.units.qual.m2",
+			"org.checkerframework.checker.units.qual.m3",
 			"org.checkerframework.checker.units.qual.Mass",
 			"org.checkerframework.checker.units.qual.min",
 			"org.checkerframework.checker.units.qual.mm",
 			"org.checkerframework.checker.units.qual.mm2",
+			"org.checkerframework.checker.units.qual.mm3",
 			"org.checkerframework.checker.units.qual.mol",
 			"org.checkerframework.checker.units.qual.mPERs",
 			"org.checkerframework.checker.units.qual.mPERs2",
+			"org.checkerframework.checker.units.qual.N",
 			"org.checkerframework.checker.units.qual.PolyUnit",
 			"org.checkerframework.checker.units.qual.radians",
 			"org.checkerframework.checker.units.qual.s",
 			"org.checkerframework.checker.units.qual.Speed",
 			"org.checkerframework.checker.units.qual.Substance",
+			"org.checkerframework.checker.units.qual.t",
 			"org.checkerframework.checker.units.qual.Temperature",
 			"org.checkerframework.checker.units.qual.Time",
 			"org.checkerframework.checker.units.qual.UnitsBottom",
 			"org.checkerframework.checker.units.qual.UnknownUnits",
+			"org.checkerframework.checker.units.qual.Volume",
 			"org.checkerframework.common.aliasing.qual.LeakedToResult",
 			"org.checkerframework.common.aliasing.qual.MaybeAliased",
 			"org.checkerframework.common.aliasing.qual.NonLeaked",
 			"org.checkerframework.common.aliasing.qual.Unique",
+			"org.checkerframework.common.initializedfields.qual.InitializedFields",
+			"org.checkerframework.common.initializedfields.qual.InitializedFieldsBottom",
+			"org.checkerframework.common.initializedfields.qual.PolyInitializedFields",
 			"org.checkerframework.common.reflection.qual.ClassBound",
 			"org.checkerframework.common.reflection.qual.ClassVal",
 			"org.checkerframework.common.reflection.qual.ClassValBottom",
@@ -286,6 +402,9 @@ public class HandlerUtil {
 			"org.checkerframework.common.reflection.qual.MethodValBottom",
 			"org.checkerframework.common.reflection.qual.UnknownClass",
 			"org.checkerframework.common.reflection.qual.UnknownMethod",
+			"org.checkerframework.common.returnsreceiver.qual.BottomThis",
+			"org.checkerframework.common.returnsreceiver.qual.This",
+			"org.checkerframework.common.returnsreceiver.qual.UnknownThis",
 			"org.checkerframework.common.subtyping.qual.Bottom",
 			"org.checkerframework.common.util.report.qual.ReportUnqualified",
 			"org.checkerframework.common.value.qual.ArrayLen",
@@ -293,27 +412,48 @@ public class HandlerUtil {
 			"org.checkerframework.common.value.qual.BoolVal",
 			"org.checkerframework.common.value.qual.BottomVal",
 			"org.checkerframework.common.value.qual.DoubleVal",
+			"org.checkerframework.common.value.qual.EnumVal",
 			"org.checkerframework.common.value.qual.IntRange",
 			"org.checkerframework.common.value.qual.IntVal",
+			"org.checkerframework.common.value.qual.MatchesRegex",
 			"org.checkerframework.common.value.qual.MinLen",
 			"org.checkerframework.common.value.qual.PolyValue",
 			"org.checkerframework.common.value.qual.StringVal",
 			"org.checkerframework.common.value.qual.UnknownVal",
-			"org.checkerframework.framework.qual.PolyAll",
-			"org.checkerframework.framework.util.PurityUnqualified",
-			
-			"org.eclipse.jdt.annotation.NonNull",
-			"org.eclipse.jdt.annotation.Nullable",
-			"org.jetbrains.annotations.NotNull",
-			"org.jetbrains.annotations.Nullable",
-			"org.springframework.lang.NonNull",
-			"org.springframework.lang.Nullable",
-			"org.netbeans.api.annotations.common.NonNull",
-			"org.netbeans.api.annotations.common.NullAllowed",
+			"org.checkerframework.framework.qual.PurityUnqualified",
 		}));
 		COPY_TO_SETTER_ANNOTATIONS = Collections.unmodifiableList(Arrays.asList(new String[] {
+			"com.fasterxml.jackson.annotation.JacksonInject",
+			"com.fasterxml.jackson.annotation.JsonAlias",
+			"com.fasterxml.jackson.annotation.JsonFormat",
+			"com.fasterxml.jackson.annotation.JsonIgnore",
+			"com.fasterxml.jackson.annotation.JsonIgnoreProperties",
 			"com.fasterxml.jackson.annotation.JsonProperty",
 			"com.fasterxml.jackson.annotation.JsonSetter",
+			"com.fasterxml.jackson.annotation.JsonSubTypes",
+			"com.fasterxml.jackson.annotation.JsonTypeInfo",
+			"com.fasterxml.jackson.annotation.JsonUnwrapped",
+			"com.fasterxml.jackson.annotation.JsonView",
+			"com.fasterxml.jackson.databind.annotation.JsonDeserialize",
+			"com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper",
+			"com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty",
+			"com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlText",
+		}));
+		COPY_TO_BUILDER_SINGULAR_SETTER_ANNOTATIONS = Collections.unmodifiableList(Arrays.asList(new String[] {
+			"com.fasterxml.jackson.annotation.JsonAnySetter",
+		}));
+		JACKSON_COPY_TO_BUILDER_ANNOTATIONS = Collections.unmodifiableList(Arrays.asList(new String[] {
+			"com.fasterxml.jackson.annotation.JsonAutoDetect",
+			"com.fasterxml.jackson.annotation.JsonFormat",
+			"com.fasterxml.jackson.annotation.JsonIgnoreProperties",
+			"com.fasterxml.jackson.annotation.JsonIgnoreType",
+			"com.fasterxml.jackson.annotation.JsonPropertyOrder",
+			"com.fasterxml.jackson.annotation.JsonRootName",
+			"com.fasterxml.jackson.annotation.JsonSubTypes",
+			"com.fasterxml.jackson.annotation.JsonTypeInfo",
+			"com.fasterxml.jackson.annotation.JsonTypeName",
+			"com.fasterxml.jackson.annotation.JsonView",
+			"com.fasterxml.jackson.databind.annotation.JsonNaming",
 		}));
 	}
 	
@@ -339,6 +479,7 @@ public class HandlerUtil {
 	public static String autoSingularize(String plural) {
 		return Singulars.autoSingularize(plural);
 	}
+	
 	public static void handleFlagUsage(LombokNode<?, ?, ?> node, ConfigurationKey<FlagUsageType> key, String featureName) {
 		FlagUsageType fut = node.getAst().readConfiguration(key);
 		
@@ -412,6 +553,14 @@ public class HandlerUtil {
 		}
 		
 		return chain || fluent;
+	}
+	
+	public static boolean shouldMakeFinal0(AnnotationValues<Accessors> accessors, AST<?, ?, ?> ast) {
+		boolean isExplicit = accessors.isExplicit("makeFinal");
+		if (isExplicit) return accessors.getAsBoolean("makeFinal");
+		Boolean config = ast.readConfiguration(ConfigurationKeys.ACCESSORS_MAKE_FINAL);
+		if (config != null) return config.booleanValue();
+		return false;
 	}
 	
 	@SuppressWarnings({"all", "unchecked", "deprecation"})
@@ -530,6 +679,20 @@ public class HandlerUtil {
 		return toAccessorName(ast, accessors, fieldName, isBoolean, "with", "with", false);
 	}
 	
+	/**
+	 * Generates a withBy name from a given field name.
+	 * 
+	 * Strategy: The same as the {@code toWithName} strategy, but then append {@code "By"} at the end.
+	 * 
+	 * @param accessors Accessors configuration.
+	 * @param fieldName the name of the field.
+	 * @param isBoolean if the field is of type 'boolean'. For fields of type {@code java.lang.Boolean}, you should provide {@code false}.
+	 * @return The with name for this field, or {@code null} if this field does not fit expected patterns and therefore cannot be turned into a getter name.
+	 */
+	public static String toWithByName(AST<?, ?, ?> ast, AnnotationValues<Accessors> accessors, CharSequence fieldName, boolean isBoolean) {
+		return toAccessorName(ast, accessors, fieldName, isBoolean, "with", "with", false) + "By";
+	}
+	
 	private static String toAccessorName(AST<?, ?, ?> ast, AnnotationValues<Accessors> accessors, CharSequence fieldName, boolean isBoolean,
 			String booleanPrefix, String normalPrefix, boolean adhereToFluent) {
 		
@@ -539,11 +702,13 @@ public class HandlerUtil {
 		if (Boolean.TRUE.equals(ast.readConfiguration(ConfigurationKeys.GETTER_CONSEQUENT_BOOLEAN))) isBoolean = false;
 		boolean explicitPrefix = accessors != null && accessors.isExplicit("prefix");
 		boolean explicitFluent = accessors != null && accessors.isExplicit("fluent");
+		boolean explicitJavaBeansSpecCapitalization = accessors != null && accessors.isExplicit("javaBeansSpecCapitalization");
 		
-		Accessors ac = (explicitPrefix || explicitFluent) ? accessors.getInstance() : null;
+		Accessors ac = (explicitPrefix || explicitFluent || explicitJavaBeansSpecCapitalization) ? accessors.getInstance() : null;
 		
 		List<String> prefix = explicitPrefix ? Arrays.asList(ac.prefix()) : ast.readConfiguration(ConfigurationKeys.ACCESSORS_PREFIX);
 		boolean fluent = explicitFluent ? ac.fluent() : Boolean.TRUE.equals(ast.readConfiguration(ConfigurationKeys.ACCESSORS_FLUENT));
+		CapitalizationStrategy capitalizationStrategy = ast.readConfigurationOr(ConfigurationKeys.ACCESSORS_JAVA_BEANS_SPEC_CAPITALIZATION, CapitalizationStrategy.defaultValue());
 		
 		fieldName = removePrefix(fieldName, prefix);
 		if (fieldName == null) return null;
@@ -556,7 +721,7 @@ public class HandlerUtil {
 			return booleanPrefix + fName.substring(2);
 		}
 		
-		return buildAccessorName(isBoolean ? booleanPrefix : normalPrefix, fName);
+		return buildAccessorName(isBoolean ? booleanPrefix : normalPrefix, fName, capitalizationStrategy);
 	}
 	
 	/**
@@ -601,6 +766,23 @@ public class HandlerUtil {
 		return toAllAccessorNames(ast, accessors, fieldName, isBoolean, "with", "with", false);
 	}
 	
+	/**
+	 * Returns all names of methods that would represent the withBy for a field with the provided name.
+	 * 
+	 * For example if {@code isBoolean} is true, then a field named {@code isRunning} would produce:<br />
+	 * {@code [withRunningBy, withIsRunningBy]}
+	 * 
+	 * @param accessors Accessors configuration.
+	 * @param fieldName the name of the field.
+	 * @param isBoolean if the field is of type 'boolean'. For fields of type 'java.lang.Boolean', you should provide {@code false}.
+	 */
+	public static List<String> toAllWithByNames(AST<?, ?, ?> ast, AnnotationValues<Accessors> accessors, CharSequence fieldName, boolean isBoolean) {
+		List<String> in = toAllAccessorNames(ast, accessors, fieldName, isBoolean, "with", "with", false);
+		if (!(in instanceof ArrayList)) in = new ArrayList<String>(in);
+		for (int i = 0; i < in.size(); i++) in.set(i, in.get(i) + "By");
+		return in;
+	}
+	
 	private static List<String> toAllAccessorNames(AST<?, ?, ?> ast, AnnotationValues<Accessors> accessors, CharSequence fieldName, boolean isBoolean,
 			String booleanPrefix, String normalPrefix, boolean adhereToFluent) {
 		
@@ -617,6 +799,7 @@ public class HandlerUtil {
 		
 		List<String> prefix = explicitPrefix ? Arrays.asList(ac.prefix()) : ast.readConfiguration(ConfigurationKeys.ACCESSORS_PREFIX);
 		boolean fluent = explicitFluent ? ac.fluent() : Boolean.TRUE.equals(ast.readConfiguration(ConfigurationKeys.ACCESSORS_FLUENT));
+		CapitalizationStrategy capitalizationStrategy = ast.readConfigurationOr(ConfigurationKeys.ACCESSORS_JAVA_BEANS_SPEC_CAPITALIZATION, CapitalizationStrategy.defaultValue());
 		
 		fieldName = removePrefix(fieldName, prefix);
 		if (fieldName == null) return Collections.emptyList();
@@ -628,13 +811,12 @@ public class HandlerUtil {
 			if (adhereToFluent && fluent) {
 				names.add(baseName);
 			} else {
-				names.add(buildAccessorName(normalPrefix, baseName));
-				if (!normalPrefix.equals(booleanPrefix)) names.add(buildAccessorName(booleanPrefix, baseName));
+				names.add(buildAccessorName(normalPrefix, baseName, capitalizationStrategy));
+				if (!normalPrefix.equals(booleanPrefix)) names.add(buildAccessorName(booleanPrefix, baseName, capitalizationStrategy));
 			}
 		}
 		
 		return new ArrayList<String>(names);
-		
 	}
 	
 	private static List<String> toBaseNames(CharSequence fieldName, boolean isBoolean, boolean fluent) {
@@ -656,23 +838,36 @@ public class HandlerUtil {
 	}
 	
 	/**
+	 * @param node Any node (used to fetch config of capitalization strategy).
 	 * @param prefix Something like {@code get} or {@code set} or {@code is}.
 	 * @param suffix Something like {@code running}.
 	 * @return prefix + smartly title-cased suffix. For example, {@code setRunning}.
 	 */
-	public static String buildAccessorName(String prefix, String suffix) {
+	public static String buildAccessorName(AST<?, ?, ?> ast, String prefix, String suffix) {
+		CapitalizationStrategy capitalizationStrategy = ast.readConfigurationOr(ConfigurationKeys.ACCESSORS_JAVA_BEANS_SPEC_CAPITALIZATION, CapitalizationStrategy.defaultValue());
+		return buildAccessorName(prefix, suffix, capitalizationStrategy);
+	}
+	
+	/**
+	 * @param node Any node (used to fetch config of capitalization strategy).
+	 * @param prefix Something like {@code get} or {@code set} or {@code is}.
+	 * @param suffix Something like {@code running}.
+	 * @return prefix + smartly title-cased suffix. For example, {@code setRunning}.
+	 */
+	public static String buildAccessorName(LombokNode<?, ?, ?> node, String prefix, String suffix) {
+		CapitalizationStrategy capitalizationStrategy = node.getAst().readConfigurationOr(ConfigurationKeys.ACCESSORS_JAVA_BEANS_SPEC_CAPITALIZATION, CapitalizationStrategy.defaultValue());
+		return buildAccessorName(prefix, suffix, capitalizationStrategy);
+	}
+	
+	/**
+	 * @param prefix Something like {@code get} or {@code set} or {@code is}.
+	 * @param suffix Something like {@code running}.
+	 * @param capitalizationStrategy Which strategy to use to capitalize the name part.
+	 */
+	private static String buildAccessorName(String prefix, String suffix, CapitalizationStrategy capitalizationStrategy) {
 		if (suffix.length() == 0) return prefix;
 		if (prefix.length() == 0) return suffix;
-		
-		char first = suffix.charAt(0);
-		if (Character.isLowerCase(first)) {
-			boolean useUpperCase = suffix.length() > 2 &&
-				(Character.isTitleCase(suffix.charAt(1)) || Character.isUpperCase(suffix.charAt(1)));
-			suffix = String.format("%s%s",
-					useUpperCase ? Character.toUpperCase(first) : Character.toTitleCase(first),
-					suffix.subSequence(1, suffix.length()));
-		}
-		return String.format("%s%s", prefix, suffix);
+		return prefix + capitalizationStrategy.capitalize(suffix);
 	}
 	
 	public static String camelCaseToConstant(String fieldName) {
@@ -685,5 +880,103 @@ public class HandlerUtil {
 			b.append(Character.toUpperCase(c));
 		}
 		return b.toString();
+	}
+	
+	/** Matches any of the 8 primitive wrapper names, such as {@code Boolean}. */
+	private static final Pattern PRIMITIVE_WRAPPER_TYPE_NAME_PATTERN = Pattern.compile("^(?:java\\.lang\\.)?(?:Boolean|Byte|Short|Integer|Long|Float|Double|Character)$");
+
+	public static int defaultEqualsAndHashcodeIncludeRank(String typeName) {
+		// Modification in this code should be documented
+		// 1. In the changelog this should be marked as an INPROBABLE BREAKING CHANGE, since the hashcode will change
+		// 2. In the javadoc of EqualsAndHashcode.Include#rank
+		if (JavaIdentifiers.isPrimitive(typeName)) return 1000;
+		if (PRIMITIVE_WRAPPER_TYPE_NAME_PATTERN.matcher(typeName).matches()) return 800;
+		return 0;
+	}
+	
+	private static final Pattern SECTION_FINDER = Pattern.compile("^\\s*\\**\\s*[-*][-*]+\\s*([GS]ETTER|WITH(?:ER)?)\\s*[-*][-*]+\\s*\\**\\s*$", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
+	private static final Pattern LINE_BREAK_FINDER = Pattern.compile("(\\r?\\n)?");
+	
+	public enum JavadocTag {
+		PARAM("@param(?:eter)?"),
+		RETURN("@returns?");
+		
+		private Pattern pattern;
+		
+		JavadocTag(String regexpFragment) {
+			pattern = Pattern.compile("\\s?^[ \\t]*\\**[ \\t]*" + regexpFragment + "(\\S|\\s)*?(?=(\\s^\\s*\\**\\s*@|\\Z))", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
+		}
+	}
+	
+	public static String stripLinesWithTagFromJavadoc(String javadoc, JavadocTag tag) {
+		if (javadoc == null || javadoc.isEmpty()) return javadoc;
+		return tag.pattern.matcher(javadoc).replaceAll("").trim();
+	}
+	
+	public static String stripSectionsFromJavadoc(String javadoc) {
+		if (javadoc == null || javadoc.isEmpty()) return javadoc;
+		Matcher sectionMatcher = SECTION_FINDER.matcher(javadoc);
+		if (!sectionMatcher.find()) return javadoc;
+		
+		return javadoc.substring(0, sectionMatcher.start());
+	}
+	
+	public static String getJavadocSection(String javadoc, String sectionNameSpec) {
+		if (javadoc == null || javadoc.isEmpty()) return null;
+		String[] sectionNames = sectionNameSpec.split("\\|");
+		Matcher sectionMatcher = SECTION_FINDER.matcher(javadoc);
+		Matcher lineBreakMatcher = LINE_BREAK_FINDER.matcher(javadoc);
+		int sectionStart = -1;
+		int sectionEnd = -1;
+		while (sectionMatcher.find()) {
+			boolean found = false;
+			for (String sectionName : sectionNames) if (sectionMatcher.group(1).equalsIgnoreCase(sectionName)) {
+				found = true;
+				break;
+			}
+			if (found) {
+				lineBreakMatcher.find(sectionMatcher.end());
+				sectionStart = lineBreakMatcher.end();
+			} else if (sectionStart != -1) {
+				sectionEnd = sectionMatcher.start();
+			}
+		}
+		
+		if (sectionStart != -1) {
+			if (sectionEnd != -1) return javadoc.substring(sectionStart, sectionEnd);
+			return javadoc.substring(sectionStart);
+		}
+		
+		return null;
+	}
+	
+	private static final Pattern FIND_RETURN = Pattern.compile("^\\s*\\**\\s*@returns?\\s+.*$", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
+	
+	public static String addReturnsThisIfNeeded(String in) {
+		if (in != null && FIND_RETURN.matcher(in).find()) return in;
+		
+		return addJavadocLine(in, "@return {@code this}.");
+	}
+	
+	public static String addReturnsUpdatedSelfIfNeeded(String in) {
+		if (in != null && FIND_RETURN.matcher(in).find()) return in;
+		
+		return addJavadocLine(in, "@return a clone of this object, except with this updated property (returns {@code this} if an identical value is passed).");
+	}
+	
+	public static String addJavadocLine(String in, String line) {
+		if (in == null) return line;
+		if (in.endsWith("\n")) return in + line + "\n";
+		return in + "\n" + line;
+	}
+
+	public static String getParamJavadoc(String methodComment, String param) {
+		if (methodComment == null || methodComment.isEmpty()) return methodComment;
+		Pattern pattern = Pattern.compile("@param " + param + " (\\S|\\s)+?(?=^ ?@)", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
+		Matcher matcher = pattern.matcher(methodComment);
+		if (matcher.find()) {
+			return matcher.group();
+		}
+		return null;
 	}
 }

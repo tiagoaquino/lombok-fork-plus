@@ -1,3 +1,4 @@
+//version 8:
 class BuilderWithNonNullWithSetterPrefix {
 	@lombok.NonNull
 	private final String id;
@@ -15,6 +16,9 @@ class BuilderWithNonNullWithSetterPrefix {
 		@java.lang.SuppressWarnings("all")
 		BuilderWithNonNullWithSetterPrefixBuilder() {
 		}
+		/**
+		 * @return {@code this}.
+		 */
 		@java.lang.SuppressWarnings("all")
 		public BuilderWithNonNullWithSetterPrefix.BuilderWithNonNullWithSetterPrefixBuilder withId(@lombok.NonNull final String id) {
 			if (id == null) {

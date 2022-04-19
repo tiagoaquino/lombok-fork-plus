@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 The Project Lombok Authors.
+ * Copyright (C) 2015-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,8 +25,6 @@ import static lombok.core.handlers.HandlerUtil.*;
 import static lombok.eclipse.Eclipse.*;
 import static lombok.eclipse.handlers.EclipseHandlerUtil.*;
 
-import java.util.Arrays;
-
 import org.eclipse.jdt.internal.compiler.ast.ASTNode;
 import org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.AllocationExpression;
@@ -45,7 +43,6 @@ import org.eclipse.jdt.internal.compiler.ast.ThrowStatement;
 import org.eclipse.jdt.internal.compiler.ast.TypeDeclaration;
 import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
 import org.eclipse.jdt.internal.compiler.lookup.TypeConstants;
-import org.mangosdk.spi.ProviderFor;
 
 import lombok.ConfigurationKeys;
 import lombok.core.AnnotationValues;
@@ -54,12 +51,13 @@ import lombok.core.AST.Kind;
 import lombok.eclipse.EclipseAnnotationHandler;
 import lombok.eclipse.EclipseNode;
 import lombok.experimental.UtilityClass;
+import lombok.spi.Provides;
 
 /**
  * Handles the {@code lombok.experimental.UtilityClass} annotation for eclipse.
  */
+@Provides
 @HandlerPriority(-4096) //-2^12; to ensure @FieldDefaults picks up on the 'static' we set here.
-@ProviderFor(EclipseAnnotationHandler.class)
 public class HandleUtilityClass extends EclipseAnnotationHandler<UtilityClass> {
 	@Override public void handle(AnnotationValues<UtilityClass> annotation, Annotation ast, EclipseNode annotationNode) {
 		handleFlagUsage(annotationNode, ConfigurationKeys.UTILITY_CLASS_FLAG_USAGE, "@UtilityClass");
@@ -70,13 +68,8 @@ public class HandleUtilityClass extends EclipseAnnotationHandler<UtilityClass> {
 	}
 	
 	private static boolean checkLegality(EclipseNode typeNode, EclipseNode errorNode) {
-		TypeDeclaration typeDecl = null;
-		if (typeNode.get() instanceof TypeDeclaration) typeDecl = (TypeDeclaration) typeNode.get();
-		int modifiers = typeDecl == null ? 0 : typeDecl.modifiers;
-		boolean notAClass = (modifiers & (ClassFileConstants.AccInterface | ClassFileConstants.AccAnnotation | ClassFileConstants.AccEnum)) != 0;
-		
-		if (typeDecl == null || notAClass) {
-			errorNode.addError("@UtilityClass is only supported on a class (can't be an interface, enum, or annotation).");
+		if (!isClass(typeNode)) {
+			errorNode.addError("@UtilityClass is only supported on a class.");
 			return false;
 		}
 		
@@ -113,7 +106,7 @@ public class HandleUtilityClass extends EclipseAnnotationHandler<UtilityClass> {
 		if (typeNode.up().getKind() == Kind.COMPILATION_UNIT) markStatic = false;
 		if (markStatic && typeNode.up().getKind() == Kind.TYPE) {
 			TypeDeclaration typeDecl = (TypeDeclaration) typeNode.up().get();
-			if ((typeDecl.modifiers & ClassFileConstants.AccInterface) != 0) markStatic = false;
+			if ((typeDecl.modifiers & (ClassFileConstants.AccInterface | ClassFileConstants.AccAnnotation)) != 0) markStatic = false;
 		}
 		
 		if (markStatic) classDecl.modifiers |= ClassFileConstants.AccStatic;
@@ -158,37 +151,28 @@ public class HandleUtilityClass extends EclipseAnnotationHandler<UtilityClass> {
 		ASTNode source = sourceNode.get();
 		
 		TypeDeclaration typeDeclaration = ((TypeDeclaration) typeNode.get());
-		long p = (long) source.sourceStart << 32 | source.sourceEnd;
 		
 		ConstructorDeclaration constructor = new ConstructorDeclaration(((CompilationUnitDeclaration) typeNode.top().get()).compilationResult);
 		
 		constructor.modifiers = ClassFileConstants.AccPrivate;
 		constructor.selector = typeDeclaration.name;
 		constructor.constructorCall = new ExplicitConstructorCall(ExplicitConstructorCall.ImplicitSuper);
-		constructor.constructorCall.sourceStart = source.sourceStart;
-		constructor.constructorCall.sourceEnd = source.sourceEnd;
 		constructor.thrownExceptions = null;
 		constructor.typeParameters = null;
 		constructor.bits |= ECLIPSE_DO_NOT_TOUCH_FLAG;
-		constructor.bodyStart = constructor.declarationSourceStart = constructor.sourceStart = source.sourceStart;
-		constructor.bodyEnd = constructor.declarationSourceEnd = constructor.sourceEnd = source.sourceEnd;
 		constructor.arguments = null;
 		
-		AllocationExpression exception = new AllocationExpression();
-		setGeneratedBy(exception, source);
 		long[] ps = new long[JAVA_LANG_UNSUPPORTED_OPERATION_EXCEPTION.length];
-		Arrays.fill(ps, p);
+		AllocationExpression exception = new AllocationExpression();
 		exception.type = new QualifiedTypeReference(JAVA_LANG_UNSUPPORTED_OPERATION_EXCEPTION, ps);
-		setGeneratedBy(exception.type, source);
 		exception.arguments = new Expression[] {
-				new StringLiteral(UNSUPPORTED_MESSAGE, source.sourceStart, source.sourceEnd, 0)
+				new StringLiteral(UNSUPPORTED_MESSAGE, 0, 0, 0)
 		};
-		setGeneratedBy(exception.arguments[0], source);
-		ThrowStatement throwStatement = new ThrowStatement(exception, source.sourceStart, source.sourceEnd);
-		setGeneratedBy(throwStatement, source);
+		ThrowStatement throwStatement = new ThrowStatement(exception, 0, 0);
 		
 		constructor.statements = new Statement[] {throwStatement};
 		
+		constructor.traverse(new SetGeneratedByVisitor(source), typeDeclaration.scope);
 		injectMethod(typeNode, constructor);
 	}
 }

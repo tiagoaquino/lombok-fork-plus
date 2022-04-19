@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 The Project Lombok Authors.
+ * Copyright (C) 2015-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,15 +24,13 @@ package lombok.javac.handlers.singulars;
 import static lombok.javac.Javac.*;
 import static lombok.javac.handlers.JavacHandlerUtil.*;
 
-import org.mangosdk.spi.ProviderFor;
-
 import lombok.core.LombokImmutableList;
 import lombok.javac.JavacNode;
 import lombok.javac.JavacTreeMaker;
 import lombok.javac.handlers.JavacSingularsRecipes.JavacSingularizer;
 import lombok.javac.handlers.JavacSingularsRecipes.SingularData;
+import lombok.spi.Provides;
 
-import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.JCTree.JCCase;
 import com.sun.tools.javac.tree.JCTree.JCExpression;
 import com.sun.tools.javac.tree.JCTree.JCStatement;
@@ -40,7 +38,7 @@ import com.sun.tools.javac.util.List;
 import com.sun.tools.javac.util.ListBuffer;
 import com.sun.tools.javac.util.Name;
 
-@ProviderFor(JavacSingularizer.class)
+@Provides(JavacSingularizer.class)
 public class JavacJavaUtilListSingularizer extends JavacJavaUtilListSetSingularizer {
 	@Override public LombokImmutableList<String> getSupportedTypes() {
 		return LombokImmutableList.of("java.util.List", "java.util.Collection", "java.lang.Iterable");
@@ -50,7 +48,7 @@ public class JavacJavaUtilListSingularizer extends JavacJavaUtilListSetSingulari
 		return "java.util.Collections.emptyList";
 	}
 	
-	@Override public void appendBuildCode(SingularData data, JavacNode builderType, JCTree source, ListBuffer<JCStatement> statements, Name targetVariableName, String builderVariable) {
+	@Override public void appendBuildCode(SingularData data, JavacNode builderType, JavacNode source, ListBuffer<JCStatement> statements, Name targetVariableName, String builderVariable) {
 		JavacTreeMaker maker = builderType.getTreeMaker();
 		List<JCExpression> jceBlank = List.nil();
 		ListBuffer<JCCase> cases = new ListBuffer<JCCase>();
@@ -89,12 +87,12 @@ public class JavacJavaUtilListSingularizer extends JavacJavaUtilListSetSingulari
 		JCStatement switchStat = maker.Switch(getSize(maker,  builderType, data.getPluralName(), true, false, builderVariable), cases.toList());
 		JCExpression localShadowerType = chainDotsString(builderType, data.getTargetFqn());
 		localShadowerType = addTypeArgs(1, false, builderType, localShadowerType, data.getTypeArgs(), source);
-		JCStatement varDefStat = maker.VarDef(maker.Modifiers(0), data.getPluralName(), localShadowerType, null);
+		JCStatement varDefStat = maker.VarDef(maker.Modifiers(0L), data.getPluralName(), localShadowerType, null);
 		statements.append(varDefStat);
 		statements.append(switchStat);
 	}
 	
-	private List<JCStatement> createListCopy(JavacTreeMaker maker, SingularData data, JavacNode builderType, JCTree source, String builderVariable) {
+	private List<JCStatement> createListCopy(JavacTreeMaker maker, SingularData data, JavacNode builderType, JavacNode source, String builderVariable) {
 		List<JCExpression> jceBlank = List.nil();
 		Name thisName = builderType.toName(builderVariable);
 		

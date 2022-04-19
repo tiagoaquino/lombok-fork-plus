@@ -10,15 +10,24 @@ public final @Value @Builder class BuilderDefaults {
     @java.lang.SuppressWarnings("all") BuilderDefaultsBuilder() {
       super();
     }
+    /**
+     * @return {@code this}.
+     */
     public @java.lang.SuppressWarnings("all") BuilderDefaults.BuilderDefaultsBuilder x(final int x) {
       this.x$value = x;
       x$set = true;
       return this;
     }
+    /**
+     * @return {@code this}.
+     */
     public @java.lang.SuppressWarnings("all") BuilderDefaults.BuilderDefaultsBuilder name(final String name) {
       this.name = name;
       return this;
     }
+    /**
+     * @return {@code this}.
+     */
     public @java.lang.SuppressWarnings("all") BuilderDefaults.BuilderDefaultsBuilder z(final long z) {
       this.z$value = z;
       z$set = true;
@@ -72,11 +81,11 @@ public final @Value @Builder class BuilderDefaults {
     final BuilderDefaults other = (BuilderDefaults) o;
     if ((this.getX() != other.getX()))
         return false;
+    if ((this.getZ() != other.getZ()))
+        return false;
     final java.lang.Object this$name = this.getName();
     final java.lang.Object other$name = other.getName();
     if (((this$name == null) ? (other$name != null) : (! this$name.equals(other$name))))
-        return false;
-    if ((this.getZ() != other.getZ()))
         return false;
     return true;
   }
@@ -84,10 +93,10 @@ public final @Value @Builder class BuilderDefaults {
     final int PRIME = 59;
     int result = 1;
     result = ((result * PRIME) + this.getX());
-    final java.lang.Object $name = this.getName();
-    result = ((result * PRIME) + (($name == null) ? 43 : $name.hashCode()));
     final long $z = this.getZ();
     result = ((result * PRIME) + (int) ($z ^ ($z >>> 32)));
+    final java.lang.Object $name = this.getName();
+    result = ((result * PRIME) + (($name == null) ? 43 : $name.hashCode()));
     return result;
   }
   public @java.lang.Override @java.lang.SuppressWarnings("all") java.lang.String toString() {

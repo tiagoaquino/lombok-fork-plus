@@ -5,7 +5,7 @@
 		<p>
 			<code>@Value</code> was introduced as experimental feature in lombok v0.11.4.
 		</p><p>
-			<code>@Value</code> no longer implies <code>@Wither</code> since lombok v0.11.8.
+			<code>@Value</code> no longer implies <code>@With</code> since lombok v0.11.8.
 		</p><p>
 			<code>@Value</code> promoted to the main <code>lombok</code> package since lombok v0.12.0.
 		</p>
@@ -30,9 +30,9 @@
 		</dt><dd>
 			Lombok will flag any usage of <code>@Value</code> as a warning or error if configured.
 		</dd><dt>
-			<code>lombok.val.flagUsage</code> = [<code>warning</code> | <code>error</code>] (default: not set)
+			<code>lombok.noArgsConstructor.extraPrivate</code> = [<code>true</code> | <code>false</code>] (default: false)
 		</dt><dd>
-			Lombok will flag any usage of <code>val</code> as a warning or error if configured.
+			If <code>true</code>, lombok will generate a private no-args constructor for any <code>@Value</code> annotated class, which sets all fields to default values (null / 0 / false).
 		</dd>
 	</@f.confKeys>
 

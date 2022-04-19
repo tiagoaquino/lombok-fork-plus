@@ -28,6 +28,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class PostCompiler {
 	private PostCompiler() {/* prevent instantiation*/};
@@ -67,15 +68,26 @@ public final class PostCompiler {
 	
 	public static OutputStream wrapOutputStream(final OutputStream originalStream, final String fileName, final DiagnosticsReceiver diagnostics) throws IOException {
 		if (System.getProperty("lombok.disablePostCompiler", null) != null) return originalStream;
+		
+		// close() can be called more than once and should be idempotent, therefore, ensure we never transform more than once.
+		final AtomicBoolean closed = new AtomicBoolean();
+		
 		return new ByteArrayOutputStream() {
 			@Override public void close() throws IOException {
+				if (closed.getAndSet(true)) {
+					originalStream.close();
+					return;
+				}
+				
 				// no need to call super
 				byte[] original = toByteArray();
 				byte[] copy = null;
-				try {
-					copy = applyTransformations(original, fileName, diagnostics);
-				} catch (Exception e) {
-					diagnostics.addWarning(String.format("Error during the transformation of '%s'; no post-compilation has been applied", fileName));
+				if (original.length > 0) {
+					try {
+						copy = applyTransformations(original, fileName, diagnostics);
+					} catch (Exception e) {
+						diagnostics.addWarning(String.format("Error during the transformation of '%s'; no post-compilation has been applied", fileName));
+					}
 				}
 				
 				if (copy == null) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2016 The Project Lombok Authors.
+ * Copyright (C) 2012-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -34,8 +34,7 @@ import lombok.experimental.PackagePrivate;
 import lombok.javac.JavacASTAdapter;
 import lombok.javac.JavacASTVisitor;
 import lombok.javac.JavacNode;
-
-import org.mangosdk.spi.ProviderFor;
+import lombok.spi.Provides;
 
 import com.sun.tools.javac.code.Flags;
 import com.sun.tools.javac.tree.JCTree;
@@ -46,7 +45,7 @@ import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
 /**
  * Handles the {@code lombok.FieldDefaults} annotation for javac.
  */
-@ProviderFor(JavacASTVisitor.class)
+@Provides(JavacASTVisitor.class)
 @HandlerPriority(-2048) //-2^11; to ensure @Value picks up on messing with the fields' 'final' state, run earlier.
 public class HandleFieldDefaults extends JavacASTAdapter {
 	public boolean generateFieldDefaultsForType(JavacNode typeNode, JavacNode errorNode, AccessLevel level, boolean makeFinal, boolean checkForTypeLevelFieldDefaults) {
@@ -57,12 +56,7 @@ public class HandleFieldDefaults extends JavacASTAdapter {
 			}
 		}
 		
-		JCClassDecl typeDecl = null;
-		if (typeNode.get() instanceof JCClassDecl) typeDecl = (JCClassDecl) typeNode.get();
-		long modifiers = typeDecl == null ? 0 : typeDecl.mods.flags;
-		boolean notAClass = (modifiers & (Flags.INTERFACE | Flags.ANNOTATION)) != 0;
-		
-		if (typeDecl == null || notAClass) {
+		if (!isClassOrEnum(typeNode)) {
 			errorNode.addError("@FieldDefaults is only supported on a class or an enum.");
 			return false;
 		}
@@ -146,6 +140,8 @@ public class HandleFieldDefaults extends JavacASTAdapter {
 		boolean defaultToFinal = makeFinalIsExplicit ? false : Boolean.TRUE.equals(typeNode.getAst().readConfiguration(ConfigurationKeys.FIELD_DEFAULTS_FINAL_EVERYWHERE));
 		
 		if (!defaultToPrivate && !defaultToFinal && fieldDefaults == null) return;
+		// Do not apply field defaults to records if set using the the config system
+		if (fieldDefaults == null && !isClassOrEnum(typeNode)) return;
 		AccessLevel fdAccessLevel = (fieldDefaults != null && levelIsExplicit) ? fd.level() : defaultToPrivate ? AccessLevel.PRIVATE : null;
 		boolean fdToFinal = (fieldDefaults != null && makeFinalIsExplicit) ? fd.makeFinal() : defaultToFinal;
 		

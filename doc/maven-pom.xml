@@ -2,7 +2,7 @@
   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.projectlombok</groupId>
-	<artifactId>lombok-plus</artifactId>
+	<artifactId>lombok</artifactId>
 	<packaging>jar</packaging>
 	<version>@VERSION@</version>
 	<name>Project Lombok</name>
@@ -17,12 +17,12 @@
 		</license>
 	</licenses>
 	<scm>
-		<connection>scm:git:git://github.com/rzwitserloot/lombok.git</connection>
-		<url>http://github.com/rzwitserloot/lombok</url>
+		<connection>scm:git:git://github.com/projectlombok/lombok.git</connection>
+		<url>http://github.com/projectlombok/lombok</url>
 	</scm>
 	<issueManagement>
 		<system>GitHub Issues</system>
-		<url>https://github.com/rzwitserloot/lombok/issues</url>
+		<url>https://github.com/projectlombok/lombok/issues</url>
 	</issueManagement>
 	<developers>
 		<developer>

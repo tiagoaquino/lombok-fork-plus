@@ -9,6 +9,9 @@ public class SuperBuilderBasic {
       }
       protected abstract @java.lang.SuppressWarnings("all") B self();
       public abstract @java.lang.SuppressWarnings("all") C build();
+      /**
+       * @return {@code this}.
+       */
       public @java.lang.SuppressWarnings("all") B field1(final int field1) {
         this.field1 = field1;
         return self();
@@ -71,14 +74,17 @@ public class SuperBuilderBasic {
       return new SuperBuilderBasic.Parent.ParentBuilderImpl();
     }
   }
-  public static @lombok.experimental.SuperBuilder class Child extends Parent {
-    public static abstract @java.lang.SuppressWarnings("all") class ChildBuilder<C extends SuperBuilderBasic.Child, B extends SuperBuilderBasic.Child.ChildBuilder<C, B>> extends Parent.ParentBuilder<C, B> {
+  public static @lombok.experimental.SuperBuilder class Child extends SuperBuilderBasic.Parent {
+    public static abstract @java.lang.SuppressWarnings("all") class ChildBuilder<C extends SuperBuilderBasic.Child, B extends SuperBuilderBasic.Child.ChildBuilder<C, B>> extends SuperBuilderBasic.Parent.ParentBuilder<C, B> {
       private @java.lang.SuppressWarnings("all") double field3;
       public ChildBuilder() {
         super();
       }
       protected abstract @java.lang.Override @java.lang.SuppressWarnings("all") B self();
       public abstract @java.lang.Override @java.lang.SuppressWarnings("all") C build();
+      /**
+       * @return {@code this}.
+       */
       public @java.lang.SuppressWarnings("all") B field3(final double field3) {
         this.field3 = field3;
         return self();

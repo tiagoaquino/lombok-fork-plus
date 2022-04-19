@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009 The Project Lombok Authors.
+ * Copyright (C) 2009-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -37,10 +37,9 @@ import java.util.jar.JarFile;
 
 import lombok.core.LombokApp;
 import lombok.permit.Permit;
+import lombok.spi.Provides;
 
-import org.mangosdk.spi.ProviderFor;
-
-@ProviderFor(LombokApp.class)
+@Provides
 public class DelombokApp extends LombokApp {
 	@Override public int runApp(List<String> args) throws Exception {
 		try {
@@ -53,11 +52,11 @@ public class DelombokApp extends LombokApp {
 				return 1;
 			}
 			try {
-				Permit.getMethod(loadDelombok(args), "main", String[].class).invoke(null, new Object[] {args.toArray(new String[0])});
+				Permit.invoke(Permit.getMethod(loadDelombok(args), "main", String[].class), null, new Object[] {args.toArray(new String[0])});
 			} catch (InvocationTargetException e1) {
 				Throwable t = e1.getCause();
-				if (t instanceof Error) throw (Error)t;
-				if (t instanceof Exception) throw (Exception)t;
+				if (t instanceof Error) throw (Error) t;
+				if (t instanceof Exception) throw (Exception) t;
 				throw e1;
 			}
 			return 0;

@@ -6,6 +6,9 @@ class AccessorsFluent {
   public @java.lang.SuppressWarnings("all") String fieldName() {
     return this.fieldName;
   }
+  /**
+   * @return {@code this}.
+   */
   public @java.lang.SuppressWarnings("all") AccessorsFluent fieldName(final String fieldName) {
     this.fieldName = fieldName;
     return this;
@@ -13,10 +16,13 @@ class AccessorsFluent {
 }
 @lombok.experimental.Accessors(fluent = true) @lombok.Getter class AccessorsFluentOnClass {
   private @lombok.Setter String fieldName = "";
-  private @lombok.experimental.Accessors String otherFieldWithOverride = "";
+  private @lombok.experimental.Accessors(fluent = false) String otherFieldWithOverride = "";
   AccessorsFluentOnClass() {
     super();
   }
+  /**
+   * @return {@code this}.
+   */
   public @java.lang.SuppressWarnings("all") AccessorsFluentOnClass fieldName(final String fieldName) {
     this.fieldName = fieldName;
     return this;
@@ -33,6 +39,9 @@ class AccessorsChain {
   AccessorsChain() {
     super();
   }
+  /**
+   * @return {@code this}.
+   */
   public @java.lang.SuppressWarnings("all") AccessorsChain setRunning(final boolean isRunning) {
     this.isRunning = isRunning;
     return this;
@@ -102,6 +111,9 @@ class AccessorsFluentGenerics<T extends Number> {
   AccessorsFluentGenerics() {
     super();
   }
+  /**
+   * @return {@code this}.
+   */
   public @java.lang.SuppressWarnings("all") AccessorsFluentGenerics<T> name(final String name) {
     this.name = name;
     return this;

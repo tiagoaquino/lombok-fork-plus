@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2019 The Project Lombok Authors.
+ * Copyright (C) 2009-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,10 +27,6 @@ import java.util.List;
 import javax.lang.model.element.Element;
 import javax.tools.Diagnostic;
 
-import lombok.core.AnnotationValues;
-import lombok.core.AST.Kind;
-import lombok.javac.handlers.JavacHandlerUtil;
-
 import com.sun.tools.javac.code.Flags;
 import com.sun.tools.javac.code.Symtab;
 import com.sun.tools.javac.model.JavacTypes;
@@ -43,8 +39,12 @@ import com.sun.tools.javac.tree.JCTree.JCMethodDecl;
 import com.sun.tools.javac.tree.JCTree.JCModifiers;
 import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
 import com.sun.tools.javac.util.Context;
-import com.sun.tools.javac.util.Name;
 import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
+import com.sun.tools.javac.util.Name;
+
+import lombok.core.AST.Kind;
+import lombok.core.AnnotationValues;
+import lombok.javac.handlers.JavacHandlerUtil;
 
 /**
  * Javac specific version of the LombokNode class.
@@ -186,16 +186,6 @@ public class JavacNode extends lombok.core.LombokNode<JavacAST, JavacNode, JCTre
 		return false;
 	}
 	
-	@Override protected boolean fieldContainsAnnotation(JCTree field, JCTree annotation) {
-		if (!(field instanceof JCVariableDecl)) return false;
-		JCVariableDecl f = (JCVariableDecl) field;
-		if (f.mods.annotations == null) return false;
-		for (JCAnnotation childAnnotation : f.mods.annotations) {
-			if (childAnnotation == annotation) return true;
-		}
-		return false;
-	}
-	
 	/**
 	 * Convenient shortcut to the owning JavacAST object's getTreeMaker method.
 	 * 
@@ -296,13 +286,15 @@ public class JavacNode extends lombok.core.LombokNode<JavacAST, JavacNode, JCTre
 	
 	@Override public boolean isStatic() {
 		if (node instanceof JCClassDecl) {
+			JCClassDecl t = (JCClassDecl) node;
+			long f = t.mods.flags;
+			if (((Flags.INTERFACE | Flags.ENUM) & f) != 0) return true;
 			JavacNode directUp = directUp();
 			if (directUp == null || directUp.getKind() == Kind.COMPILATION_UNIT) return true;
 			if (!(directUp.get() instanceof JCClassDecl)) return false;
 			JCClassDecl p = (JCClassDecl) directUp.get();
-			long f = p.mods.flags;
-			if ((Flags.INTERFACE & f) != 0) return true;
-			if ((Flags.ENUM & f) != 0) return true;
+			f = p.mods.flags;
+			if (((Flags.INTERFACE | Flags.ENUM) & f) != 0) return true;
 		}
 		
 		if (node instanceof JCVariableDecl) {
@@ -319,6 +311,20 @@ public class JavacNode extends lombok.core.LombokNode<JavacAST, JavacNode, JCTre
 		return (mods.flags & Flags.STATIC) != 0;
 	}
 	
+	@Override public boolean isFinal() {
+		if (node instanceof JCVariableDecl) {
+			JavacNode directUp = directUp();
+			if (directUp != null && directUp.get() instanceof JCClassDecl) {
+				JCClassDecl p = (JCClassDecl) directUp.get();
+				long f = p.mods.flags;
+				if (((Flags.INTERFACE | Flags.ENUM) & f) != 0) return true;
+			}
+			
+		}
+		JCModifiers mods = getModifiers();
+		return mods != null && (Flags.FINAL & mods.flags) != 0;
+	}
+	
 	@Override public boolean isEnumMember() {
 		if (getKind() != Kind.FIELD) return false;
 		JCModifiers mods = getModifiers();
@@ -329,6 +335,29 @@ public class JavacNode extends lombok.core.LombokNode<JavacAST, JavacNode, JCTre
 		if (getKind() != Kind.TYPE) return false;
 		JCModifiers mods = getModifiers();
 		return mods != null && (Flags.ENUM & mods.flags) != 0;
+	}
+	
+	@Override public boolean isPrimitive() {
+		if (node instanceof JCVariableDecl && !isEnumMember()) {
+			return Javac.isPrimitive(((JCVariableDecl) node).vartype);
+		}
+		if (node instanceof JCMethodDecl) {
+			return Javac.isPrimitive(((JCMethodDecl) node).restype);
+		}
+		return false;
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override public String fieldOrMethodBaseType() {
+		if (node instanceof JCVariableDecl && !isEnumMember()) {
+			return (((JCVariableDecl) node).vartype).toString();
+		}
+		if (node instanceof JCMethodDecl) {
+			return (((JCMethodDecl) node).restype).toString();
+		}
+		return null;
 	}
 	
 	@Override public boolean isTransient() {

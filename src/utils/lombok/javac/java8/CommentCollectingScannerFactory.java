@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011-2019 The Project Lombok Authors.
+ * Copyright (C) 2011-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,6 +21,7 @@
  */
 package lombok.javac.java8;
 
+import java.nio.Buffer;
 import java.nio.CharBuffer;
 
 import com.sun.tools.javac.parser.Scanner;
@@ -72,18 +73,31 @@ public class CommentCollectingScannerFactory extends ScannerFactory {
 		super(context);
 	}
 	
+	@SuppressWarnings("all")
 	@Override
 	public Scanner newScanner(CharSequence input, boolean keepDocComments) {
-		if (input instanceof CharBuffer) {
-			CharBuffer buf = (CharBuffer) input;
-			return new CommentCollectingScanner(this, new CommentCollectingTokenizer(this, buf, findTextBlocks));
+		char[] array;
+		int limit;
+		if (input instanceof CharBuffer && ((CharBuffer) input).hasArray()) {
+			CharBuffer cb = (CharBuffer) input;
+			((Buffer)cb.compact()).flip();
+			array = cb.array();
+			limit = cb.limit();
+		} else {
+			array = input.toString().toCharArray();
+			limit = array.length;
 		}
-		char[] array = input.toString().toCharArray();
-		return newScanner(array, array.length, keepDocComments);
+		if (array.length == limit) {
+			// work around a bug where the last comment in a file falls away in this case.
+			char[] d = new char[limit + 1];
+			System.arraycopy(array, 0, d, 0, limit);
+			array = d;
+		}
+		return newScanner(array, limit, keepDocComments);
 	}
 	
 	@Override
 	public Scanner newScanner(char[] input, int inputLength, boolean keepDocComments) {
-		return new CommentCollectingScanner(this, new CommentCollectingTokenizer(this, input, inputLength, findTextBlocks));
+		return new CommentCollectingScanner(this, CommentCollectingTokenizer.create(this, input, inputLength, findTextBlocks));
 	}
 }

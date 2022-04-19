@@ -1,3 +1,4 @@
+//version 8:
 public class NullLibrary1 {
 	String foo;
 	@java.lang.Override
@@ -34,6 +35,9 @@ public class NullLibrary1 {
 	public NullLibrary1(final String foo) {
 		this.foo = foo;
 	}
+	/**
+	 * @return a clone of this object, except with this updated property (returns {@code this} if an identical value is passed).
+	 */
 	@org.eclipse.jdt.annotation.NonNull
 	@java.lang.SuppressWarnings("all")
 	public NullLibrary1 withFoo(final String foo) {

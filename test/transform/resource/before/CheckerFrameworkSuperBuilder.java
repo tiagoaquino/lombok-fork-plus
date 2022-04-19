@@ -1,4 +1,5 @@
-//CONF: checkerframework = true
+//version 8:
+//CONF: checkerframework = 4.0
 import java.util.List;
 import lombok.Singular;
 
@@ -12,7 +13,7 @@ class CheckerFrameworkSuperBuilder {
 	}
 	
 	@lombok.experimental.SuperBuilder
-	public static class Child extends Parent {
+	public static class ZChild extends Parent {
 		@lombok.Builder.Default int a = 1;
 		int b;
 	}

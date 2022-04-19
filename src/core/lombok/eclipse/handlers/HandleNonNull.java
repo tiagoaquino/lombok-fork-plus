@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 The Project Lombok Authors.
+ * Copyright (C) 2013-2021 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,10 +22,12 @@
 package lombok.eclipse.handlers;
 
 import static lombok.core.handlers.HandlerUtil.handleFlagUsage;
-import static lombok.eclipse.Eclipse.isPrimitive;
+import static lombok.eclipse.Eclipse.*;
 import static lombok.eclipse.handlers.EclipseHandlerUtil.*;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 import org.eclipse.jdt.internal.compiler.ast.ASTNode;
 import org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration;
@@ -35,32 +37,40 @@ import org.eclipse.jdt.internal.compiler.ast.Argument;
 import org.eclipse.jdt.internal.compiler.ast.AssertStatement;
 import org.eclipse.jdt.internal.compiler.ast.Assignment;
 import org.eclipse.jdt.internal.compiler.ast.Block;
+import org.eclipse.jdt.internal.compiler.ast.CompilationUnitDeclaration;
+import org.eclipse.jdt.internal.compiler.ast.ConstructorDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.EqualExpression;
+import org.eclipse.jdt.internal.compiler.ast.ExplicitConstructorCall;
 import org.eclipse.jdt.internal.compiler.ast.Expression;
+import org.eclipse.jdt.internal.compiler.ast.FieldDeclaration;
+import org.eclipse.jdt.internal.compiler.ast.FieldReference;
 import org.eclipse.jdt.internal.compiler.ast.IfStatement;
 import org.eclipse.jdt.internal.compiler.ast.MessageSend;
 import org.eclipse.jdt.internal.compiler.ast.NullLiteral;
-import org.eclipse.jdt.internal.compiler.ast.OperatorIds;
+import org.eclipse.jdt.internal.compiler.ast.QualifiedTypeReference;
 import org.eclipse.jdt.internal.compiler.ast.SingleNameReference;
+import org.eclipse.jdt.internal.compiler.ast.SingleTypeReference;
 import org.eclipse.jdt.internal.compiler.ast.Statement;
 import org.eclipse.jdt.internal.compiler.ast.SynchronizedStatement;
+import org.eclipse.jdt.internal.compiler.ast.ThisReference;
 import org.eclipse.jdt.internal.compiler.ast.ThrowStatement;
 import org.eclipse.jdt.internal.compiler.ast.TryStatement;
+import org.eclipse.jdt.internal.compiler.ast.TypeDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.TypeReference;
-import org.mangosdk.spi.ProviderFor;
+import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
 
 import lombok.ConfigurationKeys;
 import lombok.NonNull;
 import lombok.core.AST.Kind;
 import lombok.core.AnnotationValues;
 import lombok.core.HandlerPriority;
-import lombok.eclipse.DeferUntilPostDiet;
+import lombok.eclipse.EcjAugments;
 import lombok.eclipse.EclipseAST;
 import lombok.eclipse.EclipseAnnotationHandler;
 import lombok.eclipse.EclipseNode;
+import lombok.spi.Provides;
 
-@DeferUntilPostDiet
-@ProviderFor(EclipseAnnotationHandler.class)
+@Provides
 @HandlerPriority(value = 512) // 2^9; onParameter=@__(@NonNull) has to run first.
 public class HandleNonNull extends EclipseAnnotationHandler<NonNull> {
 	private static final char[] REQUIRE_NON_NULL = "requireNonNull".toCharArray();
@@ -81,8 +91,161 @@ public class HandleNonNull extends EclipseAnnotationHandler<NonNull> {
 		}
 	}
 	
+	private List<FieldDeclaration> getRecordComponents(EclipseNode typeNode) {
+		List<FieldDeclaration> list = new ArrayList<FieldDeclaration>();
+		
+		for (EclipseNode child : typeNode.down()) {
+			if (child.getKind() == Kind.FIELD) {
+				FieldDeclaration fd = (FieldDeclaration) child.get();
+				if ((fd.modifiers & AccRecord) != 0) list.add(fd);
+			}
+		}
+		
+		return list;
+	}
+	
+	private EclipseNode addCompactConstructorIfNeeded(EclipseNode typeNode, EclipseNode annotationNode) {
+		// explicit Compact Constructor has bits set: Bit32, IsCanonicalConstructor (10).
+		// implicit Compact Constructor has bits set: Bit32, IsCanonicalConstructor (10), and IsImplicit (11).
+		// explicit constructor with long-form shows up as a normal constructor (Bit32 set, that's all), but the
+		//   implicit CC is then also present and will presumably be stripped out in some later phase.
+		
+		EclipseNode toRemove = null;
+		EclipseNode existingCompactConstructor = null;
+		List<FieldDeclaration> recordComponents = null;
+		for (EclipseNode child : typeNode.down()) {
+			if (!(child.get() instanceof ConstructorDeclaration)) continue;
+			ConstructorDeclaration cd = (ConstructorDeclaration) child.get();
+			if ((cd.bits & IsCanonicalConstructor) != 0) {
+				if ((cd.bits & IsImplicit) != 0) {
+					toRemove = child;
+				} else {
+					existingCompactConstructor = child;
+				}
+			} else {
+				// If this constructor has exact matching types vs. the record components,
+				// this is the canonical constructor in long form and we should not generate one.
+				
+				if (recordComponents == null) recordComponents = getRecordComponents(typeNode);
+				int argLength = cd.arguments == null ? 0 : cd.arguments.length;
+				int compLength = recordComponents.size();
+				boolean isCanonical = argLength == compLength;
+				if (isCanonical) top: for (int i = 0; i < argLength; i++) {
+					TypeReference a = recordComponents.get(i).type;
+					TypeReference b = cd.arguments[i] == null ? null : cd.arguments[i].type;
+					// technically this won't match e.g. `java.lang.String` to just `String`;
+					// to use this feature you'll need to use the same way to write it, which seems
+					// like a fair requirement.
+					char[][] ta = getRawTypeName(a);
+					char[][] tb = getRawTypeName(b);
+					if (ta == null || tb == null || ta.length != tb.length) {
+						isCanonical = false;
+						break top;
+					}
+					for (int j = 0; j < ta.length; j++) {
+						if (!Arrays.equals(ta[j], tb[j])) {
+							isCanonical = false;
+							break top;
+						}
+					}
+				}
+				if (isCanonical) {
+					return null;
+				}
+			}
+		}
+		if (existingCompactConstructor != null) return existingCompactConstructor;
+		int posToInsert = -1;
+		TypeDeclaration td = (TypeDeclaration) typeNode.get();
+		if (toRemove != null) {
+			int idxToRemove = -1;
+			for (int i = 0; i < td.methods.length; i++) {
+				if (td.methods[i] == toRemove.get()) idxToRemove = i;
+			}
+			if (idxToRemove != -1) {
+				System.arraycopy(td.methods, idxToRemove + 1, td.methods, idxToRemove, td.methods.length - idxToRemove - 1);
+				posToInsert = td.methods.length - 1;
+				typeNode.removeChild(toRemove);
+			}
+		}
+		if (posToInsert == -1) {
+			AbstractMethodDeclaration[] na = new AbstractMethodDeclaration[td.methods.length + 1];
+			posToInsert = td.methods.length;
+			System.arraycopy(td.methods, 0, na, 0, posToInsert);
+			td.methods = na;
+		}
+		
+		ConstructorDeclaration cd = new ConstructorDeclaration(((CompilationUnitDeclaration) typeNode.top().get()).compilationResult);
+		cd.modifiers = ClassFileConstants.AccPublic;
+		cd.bits = ASTNode.Bit32 | ECLIPSE_DO_NOT_TOUCH_FLAG | IsCanonicalConstructor;
+		cd.selector = td.name;
+		cd.constructorCall = new ExplicitConstructorCall(ExplicitConstructorCall.ImplicitSuper);
+		if (recordComponents == null) recordComponents = getRecordComponents(typeNode);
+		cd.arguments = new Argument[recordComponents.size()];
+		cd.statements = new Statement[recordComponents.size()];
+		cd.bits = IsCanonicalConstructor;
+		
+		for (int i = 0; i < cd.arguments.length; i++) {
+			FieldDeclaration cmp = recordComponents.get(i);
+			cd.arguments[i] = new Argument(cmp.name, cmp.sourceStart, cmp.type, 0);
+			cd.arguments[i].bits = ASTNode.IsArgument | ASTNode.IgnoreRawTypeCheck | ASTNode.IsReachable;
+			FieldReference lhs = new FieldReference(cmp.name, 0);
+			lhs.receiver = new ThisReference(0, 0);
+			SingleNameReference rhs = new SingleNameReference(cmp.name, 0);
+			cd.statements[i] = new Assignment(lhs, rhs, cmp.sourceEnd);
+		}
+		
+		setGeneratedBy(cd, annotationNode.get());
+		for (int i = 0; i < cd.arguments.length; i++) {
+			FieldDeclaration cmp = recordComponents.get(i);
+			cd.arguments[i].sourceStart = cmp.sourceStart;
+			cd.arguments[i].sourceEnd = cmp.sourceStart;
+			cd.arguments[i].declarationSourceEnd = cmp.sourceStart;
+			cd.arguments[i].declarationEnd = cmp.sourceStart;
+		}
+		
+		td.methods[posToInsert] = cd;
+		cd.annotations = addSuppressWarningsAll(typeNode, cd, cd.annotations);
+		cd.annotations = addGenerated(typeNode, cd, cd.annotations);
+		return typeNode.add(cd, Kind.METHOD);
+	}
+	
+	private static char[][] getRawTypeName(TypeReference a) {
+		if (a instanceof QualifiedTypeReference) return ((QualifiedTypeReference) a).tokens;
+		if (a instanceof SingleTypeReference) return new char[][] {((SingleTypeReference) a).token};
+		return null;
+	}
+	
 	@Override public void handle(AnnotationValues<NonNull> annotation, Annotation ast, EclipseNode annotationNode) {
+		// Generating new methods is only possible during diet parse but modifying existing methods requires a full parse.
+		// As we need both for @NonNull we reset the handled flag during diet parse.
+		
+		if (!annotationNode.isCompleteParse()) {
+			if (annotationNode.up().getKind() == Kind.FIELD) {
+				//Check if this is a record and we need to generate the compact form constructor.
+				EclipseNode typeNode = annotationNode.up().up();
+				if (typeNode.getKind() == Kind.TYPE) {
+					if (isRecord(typeNode)) {
+						addCompactConstructorIfNeeded(typeNode, annotationNode);
+					}
+				}
+			}
+			
+			EcjAugments.ASTNode_handled.clear(ast);
+			return;
+		}
+		
 		handle0(ast, annotationNode, false);
+	}
+	
+	private EclipseNode findCompactConstructor(EclipseNode typeNode) {
+		for (EclipseNode child : typeNode.down()) {
+			if (!(child.get() instanceof ConstructorDeclaration)) continue;
+			ConstructorDeclaration cd = (ConstructorDeclaration) child.get();
+			if ((cd.bits & IsCanonicalConstructor) != 0 && (cd.bits & IsImplicit) == 0) return child;
+		}
+		
+		return null;
 	}
 	
 	private void handle0(Annotation ast, EclipseNode annotationNode, boolean force) {
@@ -93,12 +256,25 @@ public class HandleNonNull extends EclipseAnnotationHandler<NonNull> {
 			// but in that case those handlers will take care of it. However, we DO check if the annotation is applied to
 			// a primitive, because those handlers trigger on any annotation named @NonNull and we only want the warning
 			// behaviour on _OUR_ 'lombok.NonNull'.
+			EclipseNode fieldNode = annotationNode.up();
+			EclipseNode typeNode = fieldNode.up();
 			
 			try {
 				if (isPrimitive(((AbstractVariableDeclaration) annotationNode.up().get()).type)) {
 					annotationNode.addWarning("@NonNull is meaningless on a primitive.");
+					return;
 				}
 			} catch (Exception ignore) {}
+			
+			if (isRecord(typeNode)) {
+				// well, these kinda double as parameters (of the compact constructor), so we do some work here.
+				// NB:Tthe diet parse run already added an explicit compact constructor if we need to take any actions.
+				EclipseNode compactConstructor = findCompactConstructor(typeNode);
+				
+				if (compactConstructor != null) {
+					addNullCheckIfNeeded((AbstractMethodDeclaration) compactConstructor.get(), (AbstractVariableDeclaration) fieldNode.get(), annotationNode);
+				}
+			}
 			
 			return;
 		}
@@ -141,6 +317,11 @@ public class HandleNonNull extends EclipseAnnotationHandler<NonNull> {
 			return;
 		}
 		
+		addNullCheckIfNeeded(declaration, param, annotationNode);
+		paramNode.up().rebuild();
+	}
+	
+	private void addNullCheckIfNeeded(AbstractMethodDeclaration declaration, AbstractVariableDeclaration param, EclipseNode annotationNode) {
 		// Possibly, if 'declaration instanceof ConstructorDeclaration', fetch declaration.constructorCall, search it for any references to our parameter,
 		// and if they exist, create a new method in the class: 'private static <T> T lombok$nullCheck(T expr, String msg) {if (expr == null) throw NPE; return expr;}' and
 		// wrap all references to it in the super/this to a call to this method.
@@ -189,7 +370,6 @@ public class HandleNonNull extends EclipseAnnotationHandler<NonNull> {
 			newStatements[skipOver] = nullCheck;
 			declaration.statements = newStatements;
 		}
-		paramNode.up().rebuild();
 	}
 	
 	public boolean isNullCheck(Statement stat) {
@@ -232,11 +412,11 @@ public class HandleNonNull extends EclipseAnnotationHandler<NonNull> {
 			Expression cond = isIf ? ((IfStatement) stat).condition : ((AssertStatement) stat).assertExpression;
 			if (!(cond instanceof EqualExpression)) return null;
 			EqualExpression bin = (EqualExpression) cond;
-			int operatorId = ((bin.bits & ASTNode.OperatorMASK) >> ASTNode.OperatorSHIFT);
+			String op = bin.operatorToString();
 			if (isIf) {
-				if (operatorId != OperatorIds.EQUAL_EQUAL) return null;
+				if (!"==".equals(op)) return null;
 			} else {
-				if (operatorId != OperatorIds.NOT_EQUAL) return null;
+				if (!"!=".equals(op)) return null;
 			}
 			if (!(bin.left instanceof SingleNameReference)) return null;
 			if (!(bin.right instanceof NullLiteral)) return null;
