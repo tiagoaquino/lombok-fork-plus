@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2021 The Project Lombok Authors.
+ * Copyright (C) 2010-2024 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,30 +21,40 @@
  */
 package lombok.launch;
 
+import static lombok.eclipse.EcjAugments.*;
+import static lombok.eclipse.Eclipse.*;
+
 import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.security.CodeSource;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Stack;
 
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.jdt.core.IAnnotatable;
 import org.eclipse.jdt.core.IAnnotation;
-import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
+import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.ASTNode;
+import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.Name;
+import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.search.SearchMatch;
+import org.eclipse.jdt.internal.compiler.ISourceElementRequestor.FieldInfo;
 import org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration;
+import org.eclipse.jdt.internal.compiler.ast.AbstractVariableDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.Annotation;
 import org.eclipse.jdt.internal.compiler.ast.Expression;
 import org.eclipse.jdt.internal.compiler.ast.FieldDeclaration;
@@ -52,14 +62,20 @@ import org.eclipse.jdt.internal.compiler.ast.LocalDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.TypeDeclaration;
 import org.eclipse.jdt.internal.compiler.lookup.BlockScope;
 import org.eclipse.jdt.internal.compiler.lookup.TypeBinding;
+import org.eclipse.jdt.internal.compiler.parser.Parser;
+import org.eclipse.jdt.internal.core.CompilationUnitStructureRequestor;
 import org.eclipse.jdt.internal.core.SourceField;
+import org.eclipse.jdt.internal.core.SourceFieldElementInfo;
 import org.eclipse.jdt.internal.core.dom.rewrite.NodeRewriteEvent;
 import org.eclipse.jdt.internal.core.dom.rewrite.RewriteEvent;
 import org.eclipse.jdt.internal.core.dom.rewrite.TokenScanner;
 import org.eclipse.jdt.internal.corext.refactoring.SearchResultGroup;
+import org.eclipse.jdt.internal.corext.refactoring.code.CallContext;
+import org.eclipse.jdt.internal.corext.refactoring.code.SourceProvider;
 import org.eclipse.jdt.internal.corext.refactoring.structure.MemberVisibilityAdjustor.IncomingMemberVisibilityAdjustment;
 
-import static lombok.eclipse.EcjAugments.ASTNode_generatedBy;
+import lombok.eclipse.handlers.EclipseHandlerUtil;
+import lombok.permit.Permit;
 
 /** These contain a mix of the following:
  * <ul>
@@ -153,6 +169,38 @@ final class PatchFixesHider {
 			}
 			return true;
 		}
+		
+		private static void prependToClassLoader(ClassLoader currentClassLoader, ClassLoader prepend) {
+			try {
+				Method prependParentMethod = Permit.getMethod(currentClassLoader.getClass(), "prependParent", ClassLoader.class);
+				Permit.invoke(prependParentMethod, currentClassLoader, prepend);
+			} catch (Throwable t) {
+				// Ignore
+			}
+		}
+		
+		private static ClassLoader findJdtCoreClassLoader(ClassLoader classLoader) {
+			try {
+				Method getBundleMethod = Permit.getMethod(classLoader.getClass(), "getBundle");
+				Object bundle = Permit.invoke(getBundleMethod, classLoader);
+				
+				Method getBundleContextMethod = Permit.getMethod(bundle.getClass(), "getBundleContext");
+				Object bundleContext = Permit.invoke(getBundleContextMethod, bundle);
+				
+				Method getBundlesMethod = Permit.getMethod(bundleContext.getClass(), "getBundles");
+				Object[] bundles = (Object[]) Permit.invoke(getBundlesMethod, bundleContext);
+				
+				for (Object searchBundle : bundles) {
+					if (searchBundle.toString().startsWith("org.eclipse.jdt.core_")) {
+						Method getModuleClassLoaderMethod = Permit.getMethod(searchBundle.getClass(), "getModuleClassLoader", boolean.class);
+						return (ClassLoader) Permit.invoke(getModuleClassLoaderMethod, searchBundle, false);
+					}
+				}
+			} catch (Throwable t) {
+				// Ignore
+			}
+			return null;
+		}
 	}
 	
 	/** Contains patch fixes that are dependent on lombok internals. */
@@ -191,6 +239,14 @@ final class PatchFixesHider {
 		}
 	}
 	
+	public static final class ModuleClassLoading {
+		public static void parserClinit() {
+			ClassLoader jdtCoreClassLoader = Util.findJdtCoreClassLoader(Parser.class.getClassLoader());
+			ClassLoader currentClassLoader = ModuleClassLoading.class.getClassLoader();
+			Util.prependToClassLoader(currentClassLoader, jdtCoreClassLoader);
+		}
+	}
+	
 	public static final class Transform {
 		private static Method TRANSFORM;
 		private static Method TRANSFORM_SWAPPED;
@@ -199,6 +255,8 @@ final class PatchFixesHider {
 			if (TRANSFORM != null) return;
 			
 			Main.prependClassLoader(prepend);
+			ClassLoader currentClassLoader = Transform.class.getClassLoader();
+			Util.prependToClassLoader(currentClassLoader, prepend);
 			Class<?> shadowed = Util.shadowLoadClass("lombok.eclipse.TransformEclipseAST");
 			TRANSFORM = Util.findMethodAnyArgs(shadowed, "transform");
 			TRANSFORM_SWAPPED = Util.findMethodAnyArgs(shadowed, "transform_swapped");
@@ -219,11 +277,16 @@ final class PatchFixesHider {
 	public static final class Delegate {
 		private static final Method HANDLE_DELEGATE_FOR_TYPE;
 		private static final Method ADD_GENERATED_DELEGATE_METHODS;
+		public static final Method IS_DELEGATE_SOURCE_METHOD;
+		public static final Method RETURN_ELEMENT_INFO;
 		
 		static {
-			Class<?> shadowed = Util.shadowLoadClass("lombok.eclipse.agent.PatchDelegatePortal");
-			HANDLE_DELEGATE_FOR_TYPE = Util.findMethod(shadowed, "handleDelegateForType", Object.class);
-			ADD_GENERATED_DELEGATE_METHODS = Util.findMethod(shadowed, "addGeneratedDelegateMethods", Object.class, Object.class);
+			Class<?> shadowedPortal = Util.shadowLoadClass("lombok.eclipse.agent.PatchDelegatePortal");
+			HANDLE_DELEGATE_FOR_TYPE = Util.findMethod(shadowedPortal, "handleDelegateForType", Object.class);
+			ADD_GENERATED_DELEGATE_METHODS = Util.findMethod(shadowedPortal, "addGeneratedDelegateMethods", Object.class, Object.class);
+			Class<?> shadowed = Util.shadowLoadClass("lombok.eclipse.agent.PatchDelegate");
+			IS_DELEGATE_SOURCE_METHOD = Util.findMethod(shadowed, "isDelegateSourceMethod", Object.class);
+			RETURN_ELEMENT_INFO = Util.findMethod(shadowed, "returnElementInfo", Object.class);
 		}
 		
 		public static boolean handleDelegateForType(Object classScope) {
@@ -232,6 +295,14 @@ final class PatchFixesHider {
 		
 		public static Object[] addGeneratedDelegateMethods(Object returnValue, Object javaElement) {
 			return (Object[]) Util.invokeMethod(ADD_GENERATED_DELEGATE_METHODS, returnValue, javaElement);
+		}
+		
+		public static boolean isDelegateSourceMethod(Object sourceMethod) {
+			return (Boolean) Util.invokeMethod(IS_DELEGATE_SOURCE_METHOD, sourceMethod);
+		}
+		
+		public static Object returnElementInfo(Object delegateSourceMethod) {
+			return Util.invokeMethod(RETURN_ELEMENT_INFO, delegateSourceMethod);
 		}
 	}
 	
@@ -334,6 +405,7 @@ final class PatchFixesHider {
 		private static final Method ERROR_NO_METHOD_FOR;
 		private static final Method INVALID_METHOD, INVALID_METHOD2;
 		private static final Method NON_STATIC_ACCESS_TO_STATIC_METHOD;
+		private static final Method MODIFY_METHOD_PATTERN;
 		
 		static {
 			Class<?> shadowed = Util.shadowLoadClass("lombok.eclipse.agent.PatchExtensionMethod");
@@ -342,6 +414,7 @@ final class PatchFixesHider {
 			INVALID_METHOD = Util.findMethod(shadowed, "invalidMethod", PROBLEM_REPORTER_SIG, MESSAGE_SEND_SIG, METHOD_BINDING_SIG);
 			INVALID_METHOD2 = Util.findMethod(shadowed, "invalidMethod", PROBLEM_REPORTER_SIG, MESSAGE_SEND_SIG, METHOD_BINDING_SIG, SCOPE_SIG);
 			NON_STATIC_ACCESS_TO_STATIC_METHOD = Util.findMethod(shadowed, "nonStaticAccessToStaticMethod", PROBLEM_REPORTER_SIG, AST_NODE_SIG, METHOD_BINDING_SIG, MESSAGE_SEND_SIG);
+			MODIFY_METHOD_PATTERN = Util.findMethod(shadowed, "modifyMethodPattern", Object.class);
 		}
 		
 		public static Object resolveType(Object resolvedType, Object methodCall, Object scope) {
@@ -363,25 +436,27 @@ final class PatchFixesHider {
 		public static void nonStaticAccessToStaticMethod(Object problemReporter, Object location, Object method, Object messageSend) {
 			Util.invokeMethod(NON_STATIC_ACCESS_TO_STATIC_METHOD, problemReporter, location, method, messageSend);
 		}
+		
+		public static Object modifyMethodPattern(Object original) {
+			return Util.invokeMethod(MODIFY_METHOD_PATTERN, original);
+		}
 	}
 	
 	/** Contains patch code to support Javadoc for generated methods */
 	public static final class Javadoc {
 		private static final Method GET_HTML;
-		private static final Method PRINT_METHOD;
 		
 		static {
 			Class<?> shadowed = Util.shadowLoadClass("lombok.eclipse.agent.PatchJavadoc");
-			GET_HTML = Util.findMethod(shadowed, "getHTMLContentFromSource", String.class, Object.class);
-			PRINT_METHOD = Util.findMethod(shadowed, "printMethod", AbstractMethodDeclaration.class, Integer.class, StringBuffer.class, TypeDeclaration.class);
+			GET_HTML = Util.findMethod(shadowed, "getHTMLContentFromSource", Object.class, String.class, Object.class);
 		}
 		
 		public static String getHTMLContentFromSource(String original, IJavaElement member) {
-			return (String) Util.invokeMethod(GET_HTML, original, member);
+			return (String) Util.invokeMethod(GET_HTML, null, original, member);
 		}
 		
-		public static StringBuffer printMethod(AbstractMethodDeclaration methodDeclaration, int tab, StringBuffer output, TypeDeclaration type) {
-			return (StringBuffer) Util.invokeMethod(PRINT_METHOD, methodDeclaration, tab, output, type);
+		public static String getHTMLContentFromSource(String original, Object instance, IJavaElement member) {
+			return (String) Util.invokeMethod(GET_HTML, instance, original, member);
 		}
 	}
 	
@@ -723,27 +798,6 @@ final class PatchFixesHider {
 			return result.size() == methods.length ? methods : result.toArray(new IMethod[0]);
 		}
 		
-		public static SearchMatch[] removeGenerated(SearchMatch[] returnValue) {
-			List<SearchMatch> result = new ArrayList<SearchMatch>();
-			for (int j = 0; j < returnValue.length; j++) {
-				SearchMatch searchResult = returnValue[j];
-				if (searchResult.getElement() instanceof IField) {
-					IField field = (IField) searchResult.getElement();
-					
-					// can not check for value=lombok because annotation is
-					// not fully resolved
-					IAnnotation annotation = field.getAnnotation("Generated");
-					if (annotation != null) {
-						// Method generated at field location, skip
-						continue;
-					}
-					
-				}
-				result.add(searchResult);
-			}
-			return result.toArray(new SearchMatch[0]);
-		}
-		
 		public static SearchResultGroup[] createFakeSearchResult(SearchResultGroup[] returnValue,
 				Object/*
 						 * org.eclipse.jdt.internal.corext.refactoring.rename.
@@ -852,6 +906,170 @@ final class PatchFixesHider {
 		
 		public static boolean skipRewriteVisibility(IncomingMemberVisibilityAdjustment adjustment) {
 			return isGenerated(adjustment.getMember());
+		}
+		
+		public static String[] getRealCodeBlocks(String[] blocks, SourceProvider sourceProvider, CallContext callContext) {
+			MethodDeclaration methodDeclaration = sourceProvider.getDeclaration();
+			if (!isGenerated(methodDeclaration)) {
+				return blocks;
+			}
+			
+			try {
+				// Replace parameter references with actual argument
+				AST ast = methodDeclaration.getAST();
+				List<?> parameters = methodDeclaration.parameters();
+				for (int i = 0; i < parameters.size(); i++) {
+					SingleVariableDeclaration param = (SingleVariableDeclaration) parameters.get(i);
+					Object data = param.getProperty("org.eclipse.jdt.internal.corext.refactoring.code.ParameterData");
+					List<SimpleName> names = Permit.get(Permit.permissiveGetField(data.getClass(), "fReferences"), data);
+					
+					for (SimpleName simpleName : names) {
+						ASTNode copy = ASTNode.copySubtree(ast, callContext.arguments[i]);
+						simpleName.getParent().setStructuralProperty(simpleName.getLocationInParent(), copy);
+					}
+				}
+				// Convert AST to source
+				StringBuilder sb = new StringBuilder();
+				for (Object statement : methodDeclaration.getBody().statements()) {
+					if (callContext.callMode != ASTNode.RETURN_STATEMENT && statement instanceof ReturnStatement) {
+						ReturnStatement returnStatement = (ReturnStatement) statement;
+						sb.append(returnStatement.getExpression());
+					} else {
+						sb.append(statement);
+					}
+				}
+				return new String[] {sb.toString().trim()};
+			} catch (Throwable e) {
+				return blocks;
+			}
+		}
+	}
+	
+	public static class FieldInitializer {
+		public static final Field INFO_STACK;
+		public static final Field FIELD_INFO;
+		public static final Field SOURCE_FIELD_ELEMENT_INFO;
+		public static final Field INITIALIZATION_SOURCE;
+		public static final Field NODE;
+		public static final boolean INITIALIZED;
+		
+		static {
+			INFO_STACK = Permit.permissiveGetField(CompilationUnitStructureRequestor.class, "infoStack");
+			FIELD_INFO = Permit.permissiveGetField(CompilationUnitStructureRequestor.class, "$fieldInfo");
+			SOURCE_FIELD_ELEMENT_INFO = Permit.permissiveGetField(CompilationUnitStructureRequestor.class, "$sourceFieldElementInfo");
+			INITIALIZATION_SOURCE = Permit.permissiveGetField(SourceFieldElementInfo.class, "initializationSource");
+			NODE = Permit.permissiveGetField(FieldInfo.class, "node");
+			INITIALIZED = INFO_STACK != null && FIELD_INFO != null && SOURCE_FIELD_ELEMENT_INFO != null && INITIALIZATION_SOURCE != null && NODE != null;
+		}
+		
+		public static boolean storeFieldInfo(CompilationUnitStructureRequestor compilationUnitStructureRequestor) {
+			try {
+				if (INITIALIZED) {
+					Stack<?> infoStack = Permit.get(INFO_STACK, compilationUnitStructureRequestor);
+					Object fieldInfo = infoStack.peek();
+					Permit.set(FIELD_INFO, compilationUnitStructureRequestor, fieldInfo);
+				}
+			} catch (Exception e) {
+				// do not break eclipse
+			}
+			return false;
+		}
+		public static void storeSourceFieldElementInfo(SourceFieldElementInfo fieldInfo, CompilationUnitStructureRequestor compilationUnitStructureRequestor) {
+			try {
+				if (INITIALIZED) {
+					Permit.set(SOURCE_FIELD_ELEMENT_INFO, compilationUnitStructureRequestor, fieldInfo);
+				}
+			} catch (Exception e) {
+				// do not break eclipse
+			}
+		}
+		
+		public static void overwriteInitializer(CompilationUnitStructureRequestor compilationUnitStructureRequestor) {
+			try {
+				if (INITIALIZED) {
+					FieldInfo fieldInfo = Permit.get(FIELD_INFO, compilationUnitStructureRequestor);
+					Permit.set(FIELD_INFO, compilationUnitStructureRequestor, null);
+					
+					SourceFieldElementInfo sourceFieldElementInfo = Permit.get(SOURCE_FIELD_ELEMENT_INFO,compilationUnitStructureRequestor);
+					Permit.set(SOURCE_FIELD_ELEMENT_INFO, compilationUnitStructureRequestor, null);
+					
+					if (sourceFieldElementInfo.getInitializationSource() != null) {
+						AbstractVariableDeclaration node = Permit.get(NODE, fieldInfo);
+						
+						if (PatchFixes.isGenerated(node)) {
+							Permit.set(INITIALIZATION_SOURCE, sourceFieldElementInfo, node.initialization.toString().toCharArray());
+						}
+					}
+				}
+			} catch (Exception e) {
+				// do not break eclipse
+			}
+		}
+	}
+	
+	public static class Tests {
+		public static StringBuffer printMethod(AbstractMethodDeclaration methodDeclaration, int tab, StringBuffer output, TypeDeclaration type) {
+			return (StringBuffer) printMethod(methodDeclaration, tab, (Object) output, type);
+		}
+		
+		public static StringBuilder printMethod(AbstractMethodDeclaration methodDeclaration, int tab, StringBuilder output, TypeDeclaration type) {
+			return (StringBuilder) printMethod(methodDeclaration, tab, (Object) output, type);
+		}
+		
+		public static Object printMethod(AbstractMethodDeclaration methodDeclaration, int tab, Object output, TypeDeclaration type) {
+			Map<String, String> docs = CompilationUnit_javadoc.get(methodDeclaration.compilationResult.compilationUnit);
+			Method printIndent = Permit.permissiveGetMethod(org.eclipse.jdt.internal.compiler.ast.ASTNode.class, "printIndent", int.class, output.getClass());
+			if (docs != null) {
+				String signature = EclipseHandlerUtil.getSignature(type, methodDeclaration);
+				String rawJavadoc = docs.get(signature);
+				if (rawJavadoc != null) {
+					for (String line : rawJavadoc.split("\r?\n")) {
+						try {
+							Appendable sb = (Appendable) Permit.invoke(printIndent, null, tab, output);
+							sb.append(line).append("\n");
+						} catch (Throwable e) {
+							// Ignore
+						}
+					}
+				}
+			}
+			Method printMethodDeclaration = Permit.permissiveGetMethod(AbstractMethodDeclaration.class, "print", int.class, output.getClass());
+			Permit.invokeSneaky(printMethodDeclaration, methodDeclaration, tab, output);
+			return output;
+		}
+		
+		public static Object getBundle(Object original, Class<?> c) {
+			if (original != null) {
+				return original;
+			}
+			
+			CodeSource codeSource = c.getProtectionDomain().getCodeSource();
+			if (codeSource == null) {
+				return null;
+			}
+			
+			String jar = codeSource.getLocation().getFile();
+			String bundleName = jar.substring(jar.lastIndexOf("/") + 1, jar.indexOf("_"));
+			
+			org.osgi.framework.Bundle[] bundles = org.eclipse.core.runtime.adaptor.EclipseStarter.getSystemBundleContext().getBundles();
+			for (org.osgi.framework.Bundle bundle : bundles) {
+				if (bundleName.equals(bundle.getSymbolicName())) {
+					return bundle;
+				}
+			}
+			return null;
+		}
+		
+		public static boolean isImplicitCanonicalConstructor(AbstractMethodDeclaration method, Object parameter) {
+			return (method.bits & IsCanonicalConstructor) != 0 && (method.bits & IsImplicit) != 0;
+		}
+		
+		public static StringBuffer returnStringBuffer(Object p1, StringBuffer buffer) {
+			return buffer;
+		}
+
+		public static StringBuilder returnStringBuilder(Object p1, StringBuilder buffer) {
+			return buffer;
 		}
 	}
 }

@@ -36,7 +36,6 @@ import com.sun.tools.javac.tree.JCTree.JCAnnotation;
 import com.sun.tools.javac.tree.JCTree.JCArrayTypeTree;
 import com.sun.tools.javac.tree.JCTree.JCBlock;
 import com.sun.tools.javac.tree.JCTree.JCClassDecl;
-import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
 import com.sun.tools.javac.tree.JCTree.JCExpression;
 import com.sun.tools.javac.tree.JCTree.JCFieldAccess;
 import com.sun.tools.javac.tree.JCTree.JCIdent;
@@ -45,6 +44,7 @@ import com.sun.tools.javac.tree.JCTree.JCLiteral;
 import com.sun.tools.javac.tree.JCTree.JCMethodDecl;
 import com.sun.tools.javac.tree.JCTree.JCMethodInvocation;
 import com.sun.tools.javac.tree.JCTree.JCModifiers;
+import com.sun.tools.javac.tree.JCTree.JCNewArray;
 import com.sun.tools.javac.tree.JCTree.JCNewClass;
 import com.sun.tools.javac.tree.JCTree.JCPrimitiveTypeTree;
 import com.sun.tools.javac.tree.JCTree.JCReturn;
@@ -795,10 +795,11 @@ public class HandleBuilder extends JavacAnnotationHandler<Builder> {
 		List<JCAnnotation> annsOnMethod = job.checkerFramework.generateSideEffectFree() ? List.of(maker.Annotation(genTypeRef(job.builderType, CheckerFrameworkVersion.NAME__SIDE_EFFECT_FREE), List.<JCExpression>nil())) : List.<JCAnnotation>nil();
 		JCVariableDecl recv = generateReceiver(job);
 		JCMethodDecl methodDef;
+		JCExpression returnTypeCopy = cloneType(maker, returnType, job.sourceNode);
 		if (recv != null && maker.hasMethodDefWithRecvParam()) {
-			methodDef = maker.MethodDefWithRecvParam(maker.Modifiers(toJavacModifier(job.accessInners), annsOnMethod), job.toName(job.buildMethodName), returnType, List.<JCTypeParameter>nil(), recv, List.<JCVariableDecl>nil(), thrownExceptions, body, null);
+			methodDef = maker.MethodDefWithRecvParam(maker.Modifiers(toJavacModifier(job.accessInners), annsOnMethod), job.toName(job.buildMethodName), returnTypeCopy, List.<JCTypeParameter>nil(), recv, List.<JCVariableDecl>nil(), thrownExceptions, body, null);
 		} else {
-			methodDef = maker.MethodDef(maker.Modifiers(toJavacModifier(job.accessInners), annsOnMethod), job.toName(job.buildMethodName), returnType, List.<JCTypeParameter>nil(), List.<JCVariableDecl>nil(), thrownExceptions, body, null);
+			methodDef = maker.MethodDef(maker.Modifiers(toJavacModifier(job.accessInners), annsOnMethod), job.toName(job.buildMethodName), returnTypeCopy, List.<JCTypeParameter>nil(), List.<JCVariableDecl>nil(), thrownExceptions, body, null);
 		}
 		if (staticName == null) createRelevantNonNullAnnotation(job.builderType, methodDef);
 		return methodDef;
@@ -817,6 +818,14 @@ public class HandleBuilder extends JavacAnnotationHandler<Builder> {
 		JCBlock body = maker.Block(0, List.<JCStatement>of(statement));
 		int modifiers = Flags.PRIVATE | Flags.STATIC;
 		JCMethodDecl defaultProvider = maker.MethodDef(maker.Modifiers(modifiers), methodName, cloneType(maker, field.vartype, fieldNode), copyTypeParams(fieldNode, params), List.<JCVariableDecl>nil(), List.<JCExpression>nil(), body, null);
+		// ... then we convert short array initializers from `{1,2}` to `new int[]{1,2}` ...
+		if (init instanceof JCNewArray && field.vartype instanceof JCArrayTypeTree) {
+			JCNewArray arrayInitializer = (JCNewArray) init;
+			JCArrayTypeTree fieldType = (JCArrayTypeTree) field.vartype;
+			if (arrayInitializer.elemtype == null) {
+				arrayInitializer.elemtype = cloneType(maker, fieldType.elemtype, fieldNode);
+			}
+		}
 		// ... then we set positions for everything else ...
 		recursiveSetGeneratedBy(defaultProvider, job.sourceNode);
 		// ... and finally add back the original expression
@@ -932,15 +941,6 @@ public class HandleBuilder extends JavacAnnotationHandler<Builder> {
 		
 		injectMethod(job.builderType, newMethod);
 	}
-	
-	private void copyJavadocFromParam(JavacNode from, JCMethodDecl to, String param) {
-		try {
-			JCCompilationUnit cu = ((JCCompilationUnit) from.top().get());
-			String methodComment = Javac.getDocComment(cu, from.get());
-			String newJavadoc = addReturnsThisIfNeeded(getParamJavadoc(methodComment, param));
-			Javac.setDocComment(cu, to, newJavadoc);
-		} catch (Exception ignore) {}
-	}	
 	
 	public JavacNode makeBuilderClass(BuilderJob job) {
 		//boolean isStatic, JavacNode source, JavacNode tdParent, String builderClassName, List<JCTypeParameter> typeParams, JCAnnotation ast, AccessLevel access) {

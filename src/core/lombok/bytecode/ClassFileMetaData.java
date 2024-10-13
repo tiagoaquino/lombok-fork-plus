@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2019 The Project Lombok Authors.
+ * Copyright (C) 2010-2023 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,11 +22,15 @@
 package lombok.bytecode;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
 /**
  * Utility to read the constant pool, header, and inheritance information of any class file.
+ * 
+ * THIS IS A COPY OF lombok.launch.ClassFileMetaData - it is used by the shadowclassloader which can't rely on anything from outside the lombok.launch package, but everything in the launch package has to be package private.
+ * If there is a bug or an update is needed here - make sure to also update it in the lombok.bytecode package.
  */
 public class ClassFileMetaData {
 	private static final byte UTF8 = 1;
@@ -54,7 +58,7 @@ public class ClassFileMetaData {
 	
 	private final byte[] byteCode;
 	
-	private final int maxPoolSize; 
+	private final int maxPoolSize;
 	private final int[] offsets;
 	private final byte[] types;
 	private final String[] utf8s;
@@ -136,6 +140,18 @@ public class ClassFileMetaData {
 			}
 		}
 		return new String(result, 0, length);
+	}
+	
+	public int[] getOffsets(byte type) {
+		int[] out = new int[types.length];
+		int ptr = 0;
+		
+		for (int i = 0; i < types.length; i++) {
+			if (types[i] != type) continue;
+			out[ptr++] = offsets[i];
+		}
+		
+		return Arrays.copyOf(out, ptr);
 	}
 	
 	/**
@@ -457,6 +473,9 @@ public class ClassFileMetaData {
 		return NOT_FOUND;
 	}
 	
+	/**
+	 * Reads a 16-bit value at {@code position}
+	 */
 	private int readValue(int position) {
 		return ((byteCode[position] & 0xFF) << 8) | (byteCode[position + 1] & 0xFF);
 	}

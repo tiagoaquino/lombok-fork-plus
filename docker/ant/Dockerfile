@@ -1,6 +1,6 @@
-FROM ubuntu:20.04 as downloader
+FROM ubuntu:22.04 as downloader
 
-ARG jdk=16
+ARG jdk=21
 ADD provision/jdk/java-${jdk}.sh provision/jdk/java-${jdk}.sh
 RUN provision/jdk/java-${jdk}.sh
 
@@ -11,7 +11,7 @@ ARG ant=1.10.9
 ADD provision/ant/ant-${ant}.sh provision/ant/ant-${ant}.sh
 RUN provision/ant/ant-${ant}.sh
 
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 COPY --from=downloader /usr/local/apache-ant/ /usr/local/apache-ant/
 COPY --from=downloader /opt/jdk/ /opt/jdk/
@@ -22,11 +22,10 @@ WORKDIR workspace
 
 ADD shared/ ./
 
-ARG jdk=16
+ARG jdk=21
 ADD ant/files/jdk-${jdk} ./
 
-COPY --from=downloader /lombok.jar /workspace/classpath/lombok.jar
-COPY --from=downloader /lombok.jar /workspace/modules/lombok.jar
+COPY --from=downloader /lombok.jar /workspace/lombok.jar
 
 ENV JDK_VERSION=${jdk}
 ENV JAVA_HOME=/opt/jdk

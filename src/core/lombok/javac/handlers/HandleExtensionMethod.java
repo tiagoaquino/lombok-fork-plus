@@ -73,10 +73,10 @@ public class HandleExtensionMethod extends JavacAnnotationHandler<ExtensionMetho
 		
 		deleteAnnotationIfNeccessary(annotationNode, ExtensionMethod.class);
 		JavacNode typeNode = annotationNode.up();
-		boolean isClassOrEnum = isClassOrEnum(typeNode);
+		boolean isClassEnumInterfaceOrRecord = isClassEnumInterfaceOrRecord(typeNode);
 		
-		if (!isClassOrEnum) {
-			annotationNode.addError("@ExtensionMethod can only be used on a class or an enum");
+		if (!isClassEnumInterfaceOrRecord) {
+			annotationNode.addError("@ExtensionMethod can only be used on a class, an enum, an interface or a record");
 			return;
 		}
 		
@@ -117,7 +117,8 @@ public class HandleExtensionMethod extends JavacAnnotationHandler<ExtensionMetho
 		if (tsym != null) for (Symbol member : tsym.getEnclosedElements()) {
 			if (member.getKind() != ElementKind.METHOD) continue;
 			MethodSymbol method = (MethodSymbol) member;
-			if ((method.flags() & (STATIC | PUBLIC)) == 0) continue;
+			if ((method.flags() & STATIC) == 0) continue;
+			if ((method.flags() & PUBLIC) == 0) continue;
 			if (method.params().isEmpty()) continue;
 			extensionMethods.add(method);
 		}
@@ -151,8 +152,10 @@ public class HandleExtensionMethod extends JavacAnnotationHandler<ExtensionMetho
 		
 		@Override
 		public Void visitMethodInvocation(final MethodInvocationTree tree, final Void p) {
-			super.visitMethodInvocation(tree, p);
+			scan(tree.getTypeArguments(), p);
+			scan(tree.getMethodSelect(), p);
 			handleMethodCall((JCMethodInvocation) tree);
+			scan(tree.getArguments(), p);
 			return null;
 		}
 		
@@ -180,6 +183,7 @@ public class HandleExtensionMethod extends JavacAnnotationHandler<ExtensionMetho
 			JCTree resolvedReceiver = resolution.get(receiver);
 			if (resolvedReceiver == null || resolvedReceiver.type == null) return;
 			Type receiverType = resolvedReceiver.type;
+			if (receiverType.isErroneous()) return;
 			
 			// Skip static method access
 			Symbol sym = null;

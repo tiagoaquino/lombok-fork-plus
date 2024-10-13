@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018-2021 The Project Lombok Authors.
+ * Copyright (C) 2018-2023 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -41,5 +41,6 @@ public class HandleBuilderDefaultRemove extends JavacAnnotationHandler<Builder.D
 	@Override public void handle(AnnotationValues<Default> annotation, JCAnnotation ast, JavacNode annotationNode) {
 		deleteAnnotationIfNeccessary(annotationNode, Builder.Default.class);
 		deleteImportFromCompilationUnit(annotationNode, Builder.class.getName());
+		deleteImportFromCompilationUnit(annotationNode, Builder.Default.class.getName());
 	}
 }

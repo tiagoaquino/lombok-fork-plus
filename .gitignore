@@ -6,7 +6,6 @@
 /google.properties
 /debug
 /*.launch
-/ssh.configuration
 /findbugsReport.html
 /lib
 /.settings
@@ -24,3 +23,5 @@
 /website/lombokSupporters
 /pom.xml
 /jvm.locations
+/testenv
+/gpg.keyring

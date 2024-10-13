@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2022 The Project Lombok Authors.
+ * Copyright (C) 2013-2023 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -59,6 +59,7 @@ public class ConfigurationKeys {
 	 * <em>BREAKING CHANGE</em>: Starting with lombok v1.16.20, defaults to {@code false} instead of {@code true}, as this annotation is broken in JDK9.
 	 * 
 	 * @see ConfigurationKeys#ADD_JAVAX_GENERATED_ANNOTATIONS
+	 * @see ConfigurationKeys#ADD_JAKARTA_GENERATED_ANNOTATIONS
 	 * @see ConfigurationKeys#ADD_LOMBOK_GENERATED_ANNOTATIONS
 	 * @deprecated Since version 1.16.14, use {@link #ADD_JAVAX_GENERATED_ANNOTATIONS} instead.
 	 */
@@ -75,11 +76,18 @@ public class ConfigurationKeys {
 	public static final ConfigurationKey<Boolean> ADD_JAVAX_GENERATED_ANNOTATIONS = new ConfigurationKey<Boolean>("lombok.addJavaxGeneratedAnnotation", "Generate @javax.annotation.Generated on all generated code (default: follow lombok.addGeneratedAnnotation).") {};
 	
 	/**
+	 * lombok configuration: {@code lombok.addJakartaGeneratedAnnotation} = {@code true} | {@code false}.
+	 * 
+	 * If {@code true}, lombok generates {@code @jakarta.annotation.Generated("lombok")} on all fields, methods, and types that are generated.
+	 */
+	public static final ConfigurationKey<Boolean> ADD_JAKARTA_GENERATED_ANNOTATIONS = new ConfigurationKey<Boolean>("lombok.addJakartaGeneratedAnnotation", "Generate @jakarta.annotation.Generated on all generated code (default: false).") {};
+	
+	/**
 	 * lombok configuration: {@code lombok.addLombokGeneratedAnnotation} = {@code true} | {@code false}.
 	 * 
 	 * If {@code true}, lombok generates {@code @lombok.Generated} on all fields, methods, and types that are generated.
 	 */
-	public static final ConfigurationKey<Boolean> ADD_LOMBOK_GENERATED_ANNOTATIONS = new ConfigurationKey<Boolean>("lombok.addLombokGeneratedAnnotation", "Generate @lombok.Generated on all generated code (default: false).") {};
+	public static final ConfigurationKey<Boolean> ADD_LOMBOK_GENERATED_ANNOTATIONS = new ConfigurationKey<Boolean>("lombok.addLombokGeneratedAnnotation", "Generate @lombok.Generated on all generated code (default: true).") {};
 	
 	/**
 	 * lombok configuration: {@code lombok.extern.findbugs.addSuppressFBWarnings} = {@code true} | {@code false}.
@@ -103,6 +111,7 @@ public class ConfigurationKeys {
 	 * Lombok generally copies relevant nullity annotations from your source code to the right places. However, sometimes lombok generates code where the nullability of some node is not dependent on something in your source code. You can configure lombok to add an appropriate nullity annotation in this case.<ul>
 	 * <li>{@code none} (the default) - no annotations are added.</li>
 	 * <li>{@code javax} - The annotations {@code javax.annotation.NonNull} and {@code javax.annotation.Nullable} are used.</li>
+	 * <li>{@code jakarta} - The annotations {@code jakarta.annotation.NonNull} and {@code jakarta.annotation.Nullable} are used.</li>
 	 * <li>{@code eclipse} - The annotations {@code org.eclipse.jdt.annotation.NonNull} and {@code org.eclipse.jdt.annotation.Nullable} are used.</li>
 	 * <li>{@code jetbrains} - The annotations {@code org.jetbrains.annotations.NotNull} and {@code org.jetbrains.annotations.Nullable} are used.</li>
 	 * <li>{@code netbeans} - The annotations {@code org.netbeans.api.annotations.common.NonNull} and {@code org.netbeans.api.annotations.common.NullAllowed} are used.</li>
@@ -623,8 +632,17 @@ public class ConfigurationKeys {
 	 */
 	public static final ConfigurationKey<FlagUsageType> HELPER_FLAG_USAGE = new ConfigurationKey<FlagUsageType>("lombok.helper.flagUsage", "Emit a warning or error if @Helper is used.") {};
 	
+	// ----- LOCKED -----
+	
+	/**
+	 * lombok configuration: {@code lombok.locked.flagUsage} = {@code WARNING} | {@code ERROR}.
+	 *
+	 * If set, <em>any</em> usage of {@code @Locked} results in a warning / error.
+	 */
+	public static final ConfigurationKey<FlagUsageType> LOCKED_FLAG_USAGE = new ConfigurationKey<FlagUsageType>("lombok.locked.flagUsage", "Emit a warning or error if @Locked is used.") {};
+	
 	// ----- onX -----
-
+	
 	/**
 	 * lombok configuration: {@code lombok.onX.flagUsage} = {@code WARNING} | {@code ERROR}.
 	 *

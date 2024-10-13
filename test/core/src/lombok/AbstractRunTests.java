@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2018 The Project Lombok Authors.
+ * Copyright (C) 2009-2024 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,18 +25,18 @@ import static org.junit.Assert.*;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
-import java.io.StringWriter;
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 
 import org.junit.Assert;
 
@@ -51,13 +51,7 @@ import lombok.transform.TestLombokFilesIdempotent;
 import lombok.transform.TestSourceFiles;
 
 public abstract class AbstractRunTests {
-	private final File dumpActualFilesHere;
-	
-	public AbstractRunTests() {
-		this.dumpActualFilesHere = findPlaceToDumpActualFiles();
-	}
-	
-	public final FileTester createTester(final DirectoryRunner.TestParams params, final File file, String platform, int version) throws IOException {
+	public final FileTester createTester(final DirectoryRunner.TestParams params, final File file, String platform, int version, final boolean copyToSource) throws IOException {
 		ConfigurationKeysLoader.LoaderLoader.loadAllConfigurationKeys();
 		AssertionError directiveFailure = null;
 		LombokTestSource sourceDirectives = null;
@@ -83,28 +77,38 @@ public abstract class AbstractRunTests {
 		return new FileTester() {
 			@Override public void runTest() throws Throwable {
 				if (directiveFailure_ != null) throw directiveFailure_;
-				LinkedHashSet<CompilerMessage> messages = new LinkedHashSet<CompilerMessage>();
-				StringWriter writer = new StringWriter();
-				
 				LombokConfiguration.overrideConfigurationResolverFactory(new ConfigurationResolverFactory() {
 					@Override public ConfigurationResolver createResolver(URI sourceLocation) {
 						return sourceDirectives_.getConfiguration();
 					}
 				});
 				
+				TestParameters testParameters = new TestParameters();
+				testParameters.setEncoding(sourceDirectives_.getSpecifiedEncoding());
+				testParameters.setFormatPreferences(sourceDirectives_.getFormatPreferences());
+				testParameters.setMinVersion(sourceDirectives_.minVersion());
+				testParameters.setVerifyDiet(sourceDirectives_.isVerifyDiet());
 				boolean checkPositions = !(params instanceof TestLombokFilesIdempotent || params instanceof TestSourceFiles) && !sourceDirectives_.isSkipCompareContent();
+				testParameters.setCheckPositions(checkPositions);
+				String javaVersionString = System.getProperty("compiler.compliance.level");
+				if (javaVersionString != null) {
+					long version = Long.parseLong(javaVersionString);
+					testParameters.setSourceVersion(version);
+					testParameters.setTargetVersion(version);
+				}
 				
-				boolean changed = transformCode(messages, writer, file, sourceDirectives_.getSpecifiedEncoding(), sourceDirectives_.getFormatPreferences(), sourceDirectives_.minVersion(), checkPositions);
+				TransformationResult result = transformCode(file, testParameters);
+				boolean changed = result.isChanged();
 				boolean forceUnchanged = sourceDirectives_.forceUnchanged() || sourceDirectives_.isSkipCompareContent();
-				if (params.expectChanges() && !forceUnchanged && !changed) messages.add(new CompilerMessage(-1, -1, true, "not flagged modified"));
-				if (!params.expectChanges() && changed) messages.add(new CompilerMessage(-1, -1, true, "unexpected modification"));
+				if (params.expectChanges() && !forceUnchanged && !changed) result.addMessage(new CompilerMessage(-1, -1, true, "not flagged modified"));
+				if (!params.expectChanges() && changed) result.addMessage(new CompilerMessage(-1, -1, true, "unexpected modification"));
 				
-				compare(file.getName(), expected, writer.toString(), messages, params.printErrors(), sourceDirectives_.isSkipCompareContent() || expected.isSkipCompareContent());
+				compare(file.getName(), expected, result, params.printErrors(), sourceDirectives_.isSkipCompareContent() || expected.isSkipCompareContent(), copyToSource);
 			}
 		};
 	}
 	
-	protected abstract boolean transformCode(Collection<CompilerMessage> messages, StringWriter result, File file, String encoding, Map<String, String> formatPreferences, int minVersion, boolean checkPositions) throws Throwable;
+	protected abstract TransformationResult transformCode(File file, TestParameters parameters) throws Throwable;
 	
 	protected String readFile(File file) throws IOException {
 		BufferedReader reader;
@@ -123,20 +127,34 @@ public abstract class AbstractRunTests {
 		return result.toString();
 	}
 	
-	private static File findPlaceToDumpActualFiles() {
-		String location = System.getProperty("lombok.tests.dump_actual_files");
-		if (location != null) {
-			File dumpActualFilesHere = new File(location);
-			dumpActualFilesHere.mkdirs();
-			return dumpActualFilesHere;
-		}
-		return null;
-	}
-	
 	private static void dumpToFile(File file, String content) throws IOException {
+		List<String> directives = new ArrayList<String>();
+		
+		if (file.exists()) {
+			BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(file), "UTF-8"));
+			try {
+				while (true) {
+					String line = br.readLine();
+					if (line == null) break;
+					if (line.startsWith("//")) directives.add(line);
+					else if (!line.isEmpty()) break;
+				}
+			} finally {
+				br.close();
+			}
+		}
+		
 		FileOutputStream fos = new FileOutputStream(file);
 		try {
-			fos.write(content.getBytes("UTF-8"));
+			for (String directive : directives) fos.write((directive + "\n").getBytes("UTF-8"));
+			
+			boolean atStart = true;
+			for (String line : content.split("(\\r?\\n)")) {
+				if (line.isEmpty()) continue;
+				if (atStart && line.startsWith("//")) continue;
+				atStart = false;
+				fos.write((line + "\n").getBytes("UTF-8"));
+			}
 		} finally {
 			fos.close();
 		}
@@ -144,6 +162,7 @@ public abstract class AbstractRunTests {
 	
 	private static void dumpToFile(File file, Collection<CompilerMessage> content) throws IOException {
 		FileOutputStream fos = new FileOutputStream(file);
+		System.err.println(">>> DUMPING ERR MSG: " + file.getAbsolutePath());
 		try {
 			for (CompilerMessage message : content) {
 				fos.write(CompilerMessageMatcher.asCompilerMessageMatcher(message).toString().getBytes("UTF-8"));
@@ -154,53 +173,67 @@ public abstract class AbstractRunTests {
 		}
 	}
 	
-	private void compare(String name, LombokTestSource expected, String actualFile, LinkedHashSet<CompilerMessage> actualMessages, boolean printErrors, boolean skipCompareContent) throws Throwable {
+	private void compare(String name, LombokTestSource expected, TransformationResult result, boolean printErrors, boolean skipCompareContent, boolean copyToSource) throws Throwable {
+		String actualFile = result.getOutput();
+		LinkedHashSet<CompilerMessage> actualMessages = result.getMessages();
+		
 		if (!skipCompareContent) try {
 			compareContent(name, expected.getContent(), actualFile);
 		} catch (Throwable e) {
-			if (printErrors) {
-				System.out.println("***** " + name + " *****");
-				System.out.println(e.getMessage());
-				System.out.println("**** Expected ******");
-				System.out.println(expected.getContent());
-				System.out.println("****  Actual  ******");
-				System.out.println(actualFile);
-				if (actualMessages != null && !actualMessages.isEmpty()) {
-					System.out.println("**** Actual Errors *****");
-					for (CompilerMessage actualMessage : actualMessages) {
-						System.out.println(actualMessage);
+			if (copyToSource) {
+				dumpToFile(expected.getSourceFile(), actualFile);
+				System.out.println("UPDATED: " + expected.getSourceFile());
+			} else {
+				if (printErrors) {
+					System.out.println("***** " + name + " *****");
+					System.out.println(e.getMessage());
+					System.out.println("**** Expected ******");
+					System.out.println(expected.getContent());
+					System.out.println("****  Actual  ******");
+					System.out.println(actualFile);
+					if (actualMessages != null && !actualMessages.isEmpty()) {
+						System.out.println("**** Actual Errors *****");
+						for (CompilerMessage actualMessage : actualMessages) {
+							System.out.println(actualMessage);
+						}
 					}
+					System.out.println("*******************");
 				}
-				System.out.println("*******************");
+				throw e;
 			}
-			if (dumpActualFilesHere != null) {
-				dumpToFile(new File(dumpActualFilesHere, name), actualFile);
-			}
-			throw e;
 		}
 		
 		try {
 			compareMessages(name, expected.getMessages(), actualMessages);
 		} catch (Throwable e) {
-			if (printErrors) {
-				System.out.println("***** " + name + " *****");
-				System.out.println(e.getMessage());
-				System.out.println("**** Expected ******");
-				for (CompilerMessageMatcher expectedMessage : expected.getMessages()) {
-					System.out.println(expectedMessage);
+			if (copyToSource) {
+				if (actualMessages.isEmpty()) {
+					if (expected.getMessagesFile().exists()) {
+						expected.getMessagesFile().delete();
+						System.out.println("DELETED: " + expected.getMessagesFile());
+					}
+				} else {
+					dumpToFile(expected.getMessagesFile(), actualMessages);
+					System.out.println("UPDATED: " + expected.getMessagesFile());
 				}
-				System.out.println("****  Actual  ******");
-				for (CompilerMessage actualMessage : actualMessages) {
-					System.out.println(actualMessage);
+			} else {
+				if (printErrors) {
+					System.out.println("***** " + name + " *****");
+					System.out.println(e.getMessage());
+					System.out.println("**** Expected ******");
+					for (CompilerMessageMatcher expectedMessage : expected.getMessages()) {
+						System.out.println(expectedMessage);
+					}
+					System.out.println("****  Actual  ******");
+					for (CompilerMessage actualMessage : actualMessages) {
+						System.out.println(actualMessage);
+					}
+					System.out.println("****  Actual File  ******");
+					System.out.println(lineNumber(actualFile));
+					System.out.println("*******************");
 				}
-				System.out.println("****  Actual File  ******");
-				System.out.println(lineNumber(actualFile));
-				System.out.println("*******************");
+				throw e;
 			}
-			if (dumpActualFilesHere != null) {
-				dumpToFile(new File(dumpActualFilesHere, name + ".messages"), actualMessages);
-			}
-			throw e;
 		}
 	}
 	

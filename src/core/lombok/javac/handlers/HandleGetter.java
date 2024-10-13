@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2022 The Project Lombok Authors.
+ * Copyright (C) 2009-2024 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,6 +23,7 @@ package lombok.javac.handlers;
 
 import static lombok.core.handlers.HandlerUtil.*;
 import static lombok.javac.Javac.*;
+import static lombok.javac.JavacAugments.JCTree_keepPosition;
 import static lombok.javac.JavacTreeMaker.TypeTag.*;
 import static lombok.javac.handlers.JavacHandlerUtil.*;
 
@@ -47,7 +48,6 @@ import lombok.javac.JavacTreeMaker.TypeTag;
 import lombok.spi.Provides;
 
 import com.sun.tools.javac.code.Flags;
-import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.JCTree.JCAnnotation;
 import com.sun.tools.javac.tree.JCTree.JCBinary;
 import com.sun.tools.javac.tree.JCTree.JCBlock;
@@ -144,6 +144,9 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		if (node == null) return;
 		
 		List<JCAnnotation> onMethod = unboxAndRemoveAnnotationParameter(ast, "onMethod", "@Getter(onMethod", annotationNode);
+		if (!onMethod.isEmpty()) {
+			handleFlagUsage(annotationNode, ConfigurationKeys.ON_X_FLAG_USAGE, "@Getter(onMethod=...)");
+		}
 		
 		switch (node.getKind()) {
 		case FIELD:
@@ -165,7 +168,7 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 	public void createGetterForField(AccessLevel level,
 			JavacNode fieldNode, JavacNode source, boolean whineIfExists, boolean lazy, List<JCAnnotation> onMethod) {
 		
-		if (fieldNode.getKind() != Kind.FIELD) {
+		if (fieldNode.getKind() != Kind.FIELD || fieldNode.isEnumMember()) {
 			source.addError(GETTER_NODE_NOT_SUPPORTED_ERR);
 			return;
 		}
@@ -215,32 +218,23 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		
 		long access = toJavacModifier(level) | (fieldDecl.mods.flags & Flags.STATIC);
 		
-		injectMethod(fieldNode.up(), createGetter(access, fieldNode, fieldNode.getTreeMaker(), source, lazy, onMethod));
+		injectMethod(fieldNode.up(), source, createGetter(access, fieldNode, fieldNode.getTreeMaker(), source, lazy, onMethod));
 	}
 	
 	public JCMethodDecl createGetter(long access, JavacNode field, JavacTreeMaker treeMaker, JavacNode source, boolean lazy, List<JCAnnotation> onMethod) {
 		JCVariableDecl fieldNode = (JCVariableDecl) field.get();
 		
 		// Remember the type; lazy will change it
-		JCExpression methodType = cloneType(treeMaker, copyType(treeMaker, fieldNode), source);
+		JCExpression methodType = copyType(treeMaker, fieldNode, source);
 		AnnotationValues<Accessors> accessors = JavacHandlerUtil.getAccessorsForField(field);
 		// Generate the methodName; lazy will change the field type
 		Name methodName = field.toName(toGetterName(field, accessors));
 		boolean makeFinal = shouldMakeFinal(field, accessors);
 		
 		List<JCStatement> statements;
-		JCTree toClearOfMarkers = null;
-		int[] methodArgPos = null;
 		boolean addSuppressWarningsUnchecked = false;
 		if (lazy && !inNetbeansEditor(field)) {
-			toClearOfMarkers = fieldNode.init;
-			if (toClearOfMarkers instanceof JCMethodInvocation) {
-				List<JCExpression> args = ((JCMethodInvocation) toClearOfMarkers).args;
-				methodArgPos = new int[args.length()];
-				for (int i = 0; i < methodArgPos.length; i++) {
-					methodArgPos[i] = args.get(i).pos;
-				}
-			}
+			JCTree_keepPosition.set(fieldNode.init, true);
 			statements = createLazyGetterBody(treeMaker, field, source);
 			addSuppressWarningsUnchecked = LombokOptionsFactory.getDelombokOptions(field.getContext()).getFormatPreferences().generateSuppressWarnings();
 		} else {
@@ -268,12 +262,6 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		JCMethodDecl decl = recursiveSetGeneratedBy(treeMaker.MethodDef(treeMaker.Modifiers(access, annsOnMethod), methodName, methodType,
 			methodGenericParams, parameters, throwsClauses, methodBody, annotationMethodDefaultValue), source);
 		
-		if (toClearOfMarkers != null) recursiveSetGeneratedBy(toClearOfMarkers, null);
-		if (methodArgPos != null) {
-			for (int i = 0; i < methodArgPos.length; i++) {
-				((JCMethodInvocation) toClearOfMarkers).args.get(i).pos = methodArgPos[i];
-			}
-		}
 		decl.mods.annotations = decl.mods.annotations.appendList(delegates);
 		if (addSuppressWarningsUnchecked) {
 			ListBuffer<JCExpression> suppressions = new ListBuffer<JCExpression>();
@@ -359,7 +347,7 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		ListBuffer<JCStatement> statements = new ListBuffer<JCStatement>();
 		
 		JCVariableDecl field = (JCVariableDecl) fieldNode.get();
-		JCExpression copyOfRawFieldType = copyType(maker, field);
+		JCExpression copyOfRawFieldType = copyType(maker, field, source);
 		JCExpression copyOfBoxedFieldType = null;
 		field.type = null;
 		boolean isPrimitive = false;
@@ -371,9 +359,9 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 				copyOfBoxedFieldType = genJavaLangTypeRef(fieldNode, boxed);
 			}
 		}
-		if (copyOfBoxedFieldType == null) copyOfBoxedFieldType = copyType(maker, field);
+		if (copyOfBoxedFieldType == null) copyOfBoxedFieldType = copyType(maker, field, source);
 		
-		Name valueName = fieldNode.toName("value");
+		Name valueName = fieldNode.toName("$value");
 		Name actualValueName = fieldNode.toName("actualValue");
 		
 		/* java.lang.Object value = this.fieldName.get();*/ {
@@ -446,7 +434,7 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		/*	private final java.util.concurrent.atomic.AtomicReference<Object> fieldName = new java.util.concurrent.atomic.AtomicReference<Object>(); */ {
 			field.vartype = recursiveSetGeneratedBy(
 				maker.TypeApply(chainDotsString(fieldNode, AR), List.<JCExpression>of(genJavaLangTypeRef(fieldNode, "Object"))), source);
-			field.init = recursiveSetGeneratedBy(maker.NewClass(null, NIL_EXPRESSION, copyType(maker, field), NIL_EXPRESSION, null), source);
+			field.init = recursiveSetGeneratedBy(maker.NewClass(null, NIL_EXPRESSION, copyType(maker, field, source), NIL_EXPRESSION, null), source);
 		}
 		
 		return statements.toList();
@@ -462,7 +450,7 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		return maker.Exec(maker.Apply(NIL_EXPRESSION, maker.Select(receiver, source.toName("set")), List.<JCExpression>of(value)));
 	}
 	
-	public JCExpression copyType(JavacTreeMaker treeMaker, JCVariableDecl fieldNode) {
-		return fieldNode.type != null ? treeMaker.Type(fieldNode.type) : fieldNode.vartype;
+	public JCExpression copyType(JavacTreeMaker treeMaker, JCVariableDecl fieldNode, JavacNode source) {
+		return fieldNode.type != null ? treeMaker.Type(fieldNode.type) : cloneType(treeMaker, fieldNode.vartype, source);
 	}
 }

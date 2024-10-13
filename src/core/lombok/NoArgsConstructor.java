@@ -30,7 +30,7 @@ import java.lang.annotation.Target;
  * Generates a no-args constructor.
  * Will generate an error message if such a constructor cannot be written due to the existence of final fields.
  * <p>
- * Complete documentation is found at <a href="https://projectlombok.org/features/Constructor">the project lombok features page for &#64;Constructor</a>.
+ * Complete documentation is found at <a href="https://projectlombok.org/features/constructor">the project lombok features page for &#64;Constructor</a>.
  * <p>
  * Even though it is not listed, this annotation also has the {@code onConstructor} parameter. See the full documentation for more details.
  * <p>
@@ -75,7 +75,7 @@ public @interface NoArgsConstructor {
 	 * If {@code true}, initializes all final fields to 0 / null / false.
 	 * Otherwise, a compile time error occurs.
 	 * 
-	 * @return Return {@code} true to force generation of a no-args constructor, picking defaults if necessary to assign required fields.
+	 * @return {@code} true to force generation of a no-args constructor, picking defaults if necessary to assign required fields.
 	 */
 	boolean force() default false;
 	

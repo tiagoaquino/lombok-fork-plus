@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2021 The Project Lombok Authors.
+ * Copyright (C) 2014-2023 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -85,7 +85,8 @@ import java.util.zip.ZipInputStream;
  * with hot code replace and the like (this is what the {@code shadow.override} feature is for).
  * </ul>
  * 
- * Implementation note: {@code lombok.eclipse.agent.EclipseLoaderPatcher} <em>relies</em> on this class having no dependencies on any other class except the JVM boot class, notably
+ * Implementation note: {@code lombok.eclipse.agent.EclipseLoaderPatcher} <em>relies</em> on this class having no dependencies on any other class except the JVM boot class and
+ * package private classes inside this package <strong>explicitly</strong> listed in EclipseLoaderPatcherTransplants's {@code overrideLoadResult} (near the top). This notably
  * including any other classes in this package, <strong>including</strong> inner classes. So, don't write closures, anonymous inner class literals,
  * enums, or anything else that could cause the compilation of this file to produce more than 1 class file. In general, actually passing load control to this loader is a bit tricky
  * so ensure that this class has zero dependencies on anything except java core classes.
@@ -105,9 +106,13 @@ class ShadowClassLoader extends ClassLoader {
 	
 	private final Set<ClassLoader> prependedParentLoaders = Collections.newSetFromMap(new IdentityHashMap<ClassLoader, Boolean>());
 	
+	private final PackageShader shader = new PackageShader(
+		"org/objectweb/asm/", "org/lombokweb/asm/");
+	
 	public void prependParent(ClassLoader loader) {
 		if (loader == null) return;
 		if (loader == getParent()) return;
+		if (loader == this) return;
 		prependedParentLoaders.add(loader);
 	}
 	
@@ -426,9 +431,13 @@ class ShadowClassLoader extends ClassLoader {
 		return false;
 	}
 	
+	private String toSclResourceName(String name) {
+		return "SCL." + sclSuffix + "/" + name.substring(0, name.length() - 6) + ".SCL." + sclSuffix;
+	}
+	
 	@Override public Enumeration<URL> getResources(String name) throws IOException {
 		String altName = null;
-		if (name.endsWith(".class")) altName = name.substring(0, name.length() - 6) + ".SCL." + sclSuffix;
+		if (name.endsWith(".class")) altName = toSclResourceName(name);
 		
 		// Vector? Yes, we need one:
 		// * We can NOT make inner classes here (this class is loaded with special voodoo magic in eclipse, as a one off, it's not a full loader.
@@ -470,7 +479,9 @@ class ShadowClassLoader extends ClassLoader {
 	
 	private URL getResource_(String name, boolean noSuper) {
 		String altName = null;
-		if (name.endsWith(".class")) altName = name.substring(0, name.length() - 6) + ".SCL." + sclSuffix;
+		name = shader == null ? name : shader.reverseResourceName(name);
+		if (name.endsWith(".class")) altName = toSclResourceName(name);
+		
 		for (File ce : override) {
 			URL url = getResourceFromLocation(name, altName, ce);
 			if (url != null) return url;
@@ -542,7 +553,7 @@ class ShadowClassLoader extends ClassLoader {
 		if (res == null) {
 			if (!exclusionListMatch(fileNameOfClass)) {
 				try {
-					// First search in the prepended classloaders, the class might be their already
+					// First search in the prepended classloaders, the class might be there already
 					for (ClassLoader pre : prependedParentLoaders) {
 						try {
 							Class<?> loadClass = pre.loadClass(name);
@@ -588,6 +599,8 @@ class ShadowClassLoader extends ClassLoader {
 		} catch (IOException e) {
 			throw new ClassNotFoundException("I/O exception reading class " + name, e);
 		}
+		
+		if (shader != null) shader.apply(b);
 		
 		Class<?> c;
 		try {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2019 The Project Lombok Authors.
+ * Copyright (C) 2014-2024 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -50,7 +50,8 @@ import lombok.core.configuration.ConfigurationSource;
 import lombok.core.configuration.SingleConfigurationSource;
 
 public class LombokTestSource {
-	private final File file;
+	private final File sourceFile;
+	private final File messagesFile;
 	private final String content;
 	private final LombokImmutableList<CompilerMessageMatcher> messages;
 	private final Map<String, String> formatPreferences;
@@ -58,6 +59,7 @@ public class LombokTestSource {
 	private final boolean skipCompareContent;
 	private final boolean skipIdempotent;
 	private final boolean unchanged;
+	private final boolean verifyDiet;
 	private final int versionLowerLimit, versionUpperLimit;
 	private final ConfigurationResolver configuration;
 	private final String specifiedEncoding;
@@ -85,8 +87,12 @@ public class LombokTestSource {
 		return version >= versionLowerLimit && version <= versionUpperLimit;
 	}
 	
-	public File getFile() {
-		return file;
+	public File getSourceFile() {
+		return sourceFile;
+	}
+	
+	public File getMessagesFile() {
+		return messagesFile;
 	}
 	
 	public String getContent() {
@@ -111,6 +117,10 @@ public class LombokTestSource {
 	
 	public boolean isSkipIdempotent() {
 		return skipIdempotent;
+	}
+	
+	public boolean isVerifyDiet() {
+		return verifyDiet;
 	}
 	
 	public String getSpecifiedEncoding() {
@@ -162,9 +172,11 @@ public class LombokTestSource {
 	private static final Pattern SKIP_COMPARE_CONTENT_PATTERN = Pattern.compile("^\\s*skip[- ]?compare[- ]?contents?\\s*(?:[-:].*)?$", Pattern.CASE_INSENSITIVE);
 	private static final Pattern SKIP_IDEMPOTENT_PATTERN = Pattern.compile("^\\s*skip[- ]?idempotent\\s*(?:[-:].*)?$", Pattern.CASE_INSENSITIVE);
 	private static final Pattern ISSUE_REF_PATTERN = Pattern.compile("^\\s*issue #?\\d+(:?\\s+.*)?$", Pattern.CASE_INSENSITIVE);
+	private static final Pattern VERIFY_DIET_PATTERN = Pattern.compile("^\\s*eclipse:\\s*verify[- ]?diet\\s*(?:[-:].*)?$", Pattern.CASE_INSENSITIVE);
 	
-	private LombokTestSource(File file, String content, List<CompilerMessageMatcher> messages, List<String> directives) {
-		this.file = file;
+	private LombokTestSource(File sourceFile, File messagesFile, String content, List<CompilerMessageMatcher> messages, List<String> directives) {
+		this.sourceFile = sourceFile;
+		this.messagesFile = messagesFile;
 		this.content = content;
 		this.messages = messages == null ? LombokImmutableList.<CompilerMessageMatcher>of() : LombokImmutableList.copyOf(messages);
 		
@@ -175,6 +187,7 @@ public class LombokTestSource {
 		boolean skipCompareContent = false;
 		boolean skipIdempotent = false;
 		boolean unchanged = false;
+		boolean verifyDiet = false;
 		String encoding = null;
 		Map<String, String> formats = new HashMap<String, String>();
 		String[] platformLimit = null;
@@ -204,6 +217,10 @@ public class LombokTestSource {
 			if (ISSUE_REF_PATTERN.matcher(directive).matches()) {
 				continue;
 			}
+			if (VERIFY_DIET_PATTERN.matcher(directive).matches()) {
+				verifyDiet = true;
+				continue;
+			}
 			
 			if (lc.startsWith("platform ")) {
 				String platformDesc = lc.substring("platform ".length());
@@ -216,7 +233,7 @@ public class LombokTestSource {
 			if (lc.startsWith("version ")) {
 				int[] limits = parseVersionLimit(lc.substring(7).trim());
 				if (limits == null) {
-					Assert.fail("Directive line \"" + directive + "\" in '" + file.getAbsolutePath() + "' invalid: version must be followed by a single integer.");
+					Assert.fail("Directive line \"" + directive + "\" in '" + sourceFile.getAbsolutePath() + "' invalid: version must be followed by a single integer.");
 					throw new RuntimeException();
 				}
 				versionLower = limits[0];
@@ -247,7 +264,7 @@ public class LombokTestSource {
 			
 			if (lc.startsWith("issue ")) continue;
 			
-			Assert.fail("Directive line \"" + directive + "\" in '" + file.getAbsolutePath() + "' invalid: unrecognized directive.");
+			Assert.fail("Directive line \"" + directive + "\" in '" + sourceFile.getAbsolutePath() + "' invalid: unrecognized directive.");
 			throw new RuntimeException();
 		}
 		this.specifiedEncoding = encoding;
@@ -257,6 +274,7 @@ public class LombokTestSource {
 		this.skipCompareContent = skipCompareContent;
 		this.skipIdempotent = skipIdempotent;
 		this.unchanged = unchanged;
+		this.verifyDiet = verifyDiet;
 		this.platforms = platformLimit == null ? null : Arrays.asList(platformLimit);
 		
 		ConfigurationProblemReporter reporter = new ConfigurationProblemReporter() {
@@ -264,7 +282,7 @@ public class LombokTestSource {
 				Assert.fail("Problem on directive line: " + problem + " at conf line #" + lineNumber + " (" + line + ")");
 			}
 		};
-		final ConfigurationFile configurationFile = ConfigurationFile.fromCharSequence(file.getAbsoluteFile().getPath(), conf, ConfigurationFile.getLastModifiedOrMissing(file));
+		final ConfigurationFile configurationFile = ConfigurationFile.fromCharSequence(sourceFile.getAbsoluteFile().getPath(), conf, ConfigurationFile.getLastModifiedOrMissing(sourceFile));
 		final ConfigurationSource source = SingleConfigurationSource.parse(configurationFile, new ConfigurationParser(reporter));
 		ConfigurationFileToSource sourceFinder = new ConfigurationFileToSource() {
 			@Override public ConfigurationSource parsed(ConfigurationFile fileLocation) {
@@ -303,7 +321,7 @@ public class LombokTestSource {
 			}
 		}
 		
-		return new LombokTestSource(file, "", null, directives);
+		return new LombokTestSource(file, null, "", null, directives);
 	}
 	
 	public static LombokTestSource read(File sourceFolder, File messagesFolder, String fileName) throws IOException {
@@ -348,8 +366,9 @@ public class LombokTestSource {
 		if (content == null) content = new StringBuilder();
 		
 		List<CompilerMessageMatcher> messages = null;
+		File messagesFile = null;
 		if (messagesFolder != null) {
-			File messagesFile = new File(messagesFolder, fileName + ".messages");
+			messagesFile = new File(messagesFolder, fileName + ".messages");
 			try {
 				InputStream rawIn = new FileInputStream(messagesFile);
 				try {
@@ -360,10 +379,11 @@ public class LombokTestSource {
 				}
 			} catch (FileNotFoundException e) {
 				messages = null;
+				messagesFile = null;
 			}
 		}
 		
-		LombokTestSource source = new LombokTestSource(sourceFile, content.toString(), messages, directives);
+		LombokTestSource source = new LombokTestSource(sourceFile, messagesFile, content.toString(), messages, directives);
 		String specifiedEncoding = source.getSpecifiedEncoding();
 		
 		// The source file has an 'encoding' header to test encoding issues. Of course, reading the encoding header

@@ -36,6 +36,7 @@ import com.sun.tools.javac.code.BoundKind;
 import com.sun.tools.javac.code.Flags;
 import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.JCTree.JCAnnotation;
+import com.sun.tools.javac.tree.JCTree.JCArrayTypeTree;
 import com.sun.tools.javac.tree.JCTree.JCAssign;
 import com.sun.tools.javac.tree.JCTree.JCBlock;
 import com.sun.tools.javac.tree.JCTree.JCClassDecl;
@@ -63,9 +64,9 @@ import lombok.ConfigurationKeys;
 import lombok.Singular;
 import lombok.ToString;
 import lombok.core.AST.Kind;
-import lombok.core.configuration.CheckerFrameworkVersion;
 import lombok.core.AnnotationValues;
 import lombok.core.HandlerPriority;
+import lombok.core.configuration.CheckerFrameworkVersion;
 import lombok.core.handlers.HandlerUtil;
 import lombok.core.handlers.HandlerUtil.FieldAccess;
 import lombok.core.handlers.InclusionExclusionUtils.Included;
@@ -77,6 +78,8 @@ import lombok.javac.JavacNode;
 import lombok.javac.JavacTreeMaker;
 import lombok.javac.handlers.HandleBuilder.BuilderFieldData;
 import lombok.javac.handlers.HandleBuilder.BuilderJob;
+import lombok.javac.handlers.JavacHandlerUtil.CopyJavadoc;
+import lombok.javac.handlers.JavacHandlerUtil.JCAnnotatedTypeReflect;
 import lombok.javac.handlers.JavacHandlerUtil.MemberExistsResult;
 import lombok.javac.handlers.JavacSingularsRecipes.ExpressionMaker;
 import lombok.javac.handlers.JavacSingularsRecipes.JavacSingularizer;
@@ -260,7 +263,7 @@ public class HandleSuperBuilder extends JavacAnnotationHandler<SuperBuilder> {
 			Name superclassName = ((JCFieldAccess) extendsClause).getIdentifier();
 			String builderClassNameTemplate = BuilderJob.getBuilderClassNameTemplate(annotationNode, null);
 			String superclassBuilderClassName = job.replaceBuilderClassName(superclassName.toString(), builderClassNameTemplate);
-			superclassBuilderClass = parent.getTreeMaker().Select((JCFieldAccess) extendsClause, parent.toName(superclassBuilderClassName));
+			superclassBuilderClass = parent.getTreeMaker().Select(cloneType(maker, (JCFieldAccess) extendsClause, annotationNode), parent.toName(superclassBuilderClassName));
 		} else if (extendsClause != null) {
 			String builderClassNameTemplate = BuilderJob.getBuilderClassNameTemplate(annotationNode, null);
 			String superclassBuilderClassName = job.replaceBuilderClassName(extendsClause.toString(), builderClassNameTemplate);
@@ -336,6 +339,11 @@ public class HandleSuperBuilder extends JavacAnnotationHandler<SuperBuilder> {
 			injectMethod(job.builderType, sfvm);
 		}
 		
+		// Create the setter methods in the abstract builder.
+		for (BuilderFieldData bfd : job.builderFields) {
+			generateSetterMethodsForBuilder(job, bfd, builderGenericName, annInstance.setterPrefix());
+		}
+		
 		// Generate abstract self() and build() methods in the abstract builder.
 		JCMethodDecl asm = generateAbstractSelfMethod(job, superclassBuilderClass != null, builderGenericName);
 		recursiveSetGeneratedBy(asm, annotationNode);
@@ -343,11 +351,6 @@ public class HandleSuperBuilder extends JavacAnnotationHandler<SuperBuilder> {
 		JCMethodDecl abm = generateAbstractBuildMethod(job, superclassBuilderClass != null, classGenericName);
 		recursiveSetGeneratedBy(abm, annotationNode);
 		injectMethod(job.builderType, abm);
-		
-		// Create the setter methods in the abstract builder.
-		for (BuilderFieldData bfd : job.builderFields) {
-			generateSetterMethodsForBuilder(job, bfd, builderGenericName, annInstance.setterPrefix());
-		}
 		
 		// Create the toString() method for the abstract builder.
 		java.util.List<Included<JavacNode, ToString.Include>> fieldNodes = new ArrayList<Included<JavacNode, ToString.Include>>();
@@ -607,6 +610,7 @@ public class HandleSuperBuilder extends JavacAnnotationHandler<SuperBuilder> {
 		// Now add the <?, ?>.
 		JCWildcard wildcard = maker.Wildcard(maker.TypeBoundKind(BoundKind.UNBOUND), null);
 		typeParameterNames.append(wildcard);
+		wildcard = maker.Wildcard(maker.TypeBoundKind(BoundKind.UNBOUND), null);
 		typeParameterNames.append(wildcard);
 		// And return type annotations.
 		List<JCAnnotation> annsOnParamType = List.nil();
@@ -644,6 +648,7 @@ public class HandleSuperBuilder extends JavacAnnotationHandler<SuperBuilder> {
 		// Now add the <?, ?>.
 		JCWildcard wildcard = maker.Wildcard(maker.TypeBoundKind(BoundKind.UNBOUND), null);
 		typeParameterNames.append(wildcard);
+		wildcard = maker.Wildcard(maker.TypeBoundKind(BoundKind.UNBOUND), null);
 		typeParameterNames.append(wildcard);
 		JCTypeApply returnType = maker.TypeApply(namePlusTypeParamsToTypeReference(maker, job.parentType, job.toName(job.builderAbstractClassName), false, List.<JCTypeParameter>nil()), typeParameterNames.toList());
 		
@@ -964,6 +969,11 @@ public class HandleSuperBuilder extends JavacAnnotationHandler<SuperBuilder> {
 		returnType = addCheckerFrameworkReturnsReceiver(returnType, maker, job.builderType, job.checkerFramework);
 
 		JCMethodDecl newMethod = HandleSetter.createSetter(Flags.PUBLIC, deprecate, fieldNode, maker, setterName, paramName, nameOfSetFlag, returnType, returnStatement, job.sourceNode, methodAnns, annosOnParam);
+		if (job.sourceNode.up().getKind() == Kind.METHOD) {
+			copyJavadocFromParam(originalFieldNode.up(), newMethod, paramName.toString());
+		} else {
+			copyJavadoc(originalFieldNode, newMethod, CopyJavadoc.SETTER, true);
+		}
 		injectMethod(job.builderType, newMethod);
 	}
 	
@@ -1051,7 +1061,26 @@ public class HandleSuperBuilder extends JavacAnnotationHandler<SuperBuilder> {
 			}
 		}
 		
+		// 4. Add extends and implements clauses.
+		addFirstToken(usedNames, Javac.getExtendsClause(td));
+		for (JCExpression impl : td.getImplementsClause()) {
+			addFirstToken(usedNames, impl);
+		}
+		
 		return usedNames;
+	}
+	
+	private void addFirstToken(java.util.Set<String> usedNames, JCTree type) {
+		if (type == null) 
+			return;
+		if (type instanceof JCTypeApply) {
+			type = ((JCTypeApply)type).clazz;
+		}
+		while (type instanceof JCFieldAccess && ((JCFieldAccess)type).selected != null) {
+			// Add the first token, because only that can collide.
+			type = ((JCFieldAccess)type).selected;
+		}
+		usedNames.add(type.toString());
 	}
 	
 	private String generateNonclashingNameFor(String classGenericName, java.util.HashSet<String> typeParamStrings) {
@@ -1074,13 +1103,17 @@ public class HandleSuperBuilder extends JavacAnnotationHandler<SuperBuilder> {
 		ListBuffer<JCExpression> typeParamsForBuilderParameter = new ListBuffer<JCExpression>();
 		for (JCTree typeParam : typeParams) {
 			if (typeParam instanceof JCTypeParameter) {
-				typeParamsForBuilderParameter.append(maker.Ident(((JCTypeParameter)typeParam).getName()));
+				typeParamsForBuilderParameter.append(maker.Ident(((JCTypeParameter) typeParam).getName()));
 			} else if (typeParam instanceof JCIdent) {
-				typeParamsForBuilderParameter.append(maker.Ident(((JCIdent)typeParam).getName()));
+				typeParamsForBuilderParameter.append(maker.Ident(((JCIdent) typeParam).getName()));
 			} else if (typeParam instanceof JCFieldAccess) {
 				typeParamsForBuilderParameter.append(copySelect(maker, (JCFieldAccess) typeParam));
 			} else if (typeParam instanceof JCTypeApply) {
-				typeParamsForBuilderParameter.append(cloneType(maker, (JCTypeApply)typeParam, source));
+				typeParamsForBuilderParameter.append(cloneType(maker, (JCTypeApply) typeParam, source));
+			} else if (typeParam instanceof JCArrayTypeTree) {
+				typeParamsForBuilderParameter.append(cloneType(maker, (JCArrayTypeTree) typeParam, source));
+			} else if (JCAnnotatedTypeReflect.is(typeParam)) {
+				typeParamsForBuilderParameter.append(cloneType(maker, (JCExpression) typeParam, source));
 			}
 		}
 		return typeParamsForBuilderParameter;

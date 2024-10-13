@@ -48,12 +48,12 @@ public class BubblingConfigurationResolver implements ConfigurationResolver {
 	public <T> T resolve(ConfigurationKey<T> key) {
 		boolean isList = key.getType().isList();
 		List<List<ListModification>> listModificationsList = null;
-
+		
 		boolean stopBubbling = false;
 		ConfigurationFile currentLevel = start;
 		Collection<ConfigurationFile> visited = new HashSet<ConfigurationFile>();
 		outer:
-		while (!stopBubbling && currentLevel != null) {
+		while (currentLevel != null) {
 			Deque<ConfigurationFile> round = new ArrayDeque<ConfigurationFile>();
 			round.push(currentLevel);
 			
@@ -70,18 +70,18 @@ public class BubblingConfigurationResolver implements ConfigurationResolver {
 				stopBubbling = stopBubbling || (stop != null && Boolean.TRUE.equals(stop.getValue()));
 				
 				Result result = source.resolve(key);
-				if (result == null) {
-					continue;
-				}
+				if (result == null) continue;
+				
 				if (isList) {
 					if (listModificationsList == null) listModificationsList = new ArrayList<List<ListModification>>();
-					listModificationsList.add((List<ListModification>)result.getValue());
+					listModificationsList.add((List<ListModification>) result.getValue());
 				}
 				if (result.isAuthoritative()) {
 					if (isList) break outer;
 					return (T) result.getValue();
 				}
 			}
+			if (stopBubbling) break;
 			currentLevel = currentLevel.parent();
 		}
 		

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2022 The Project Lombok Authors.
+ * Copyright (C) 2012-2024 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -64,8 +64,8 @@ import org.eclipse.jdt.internal.compiler.lookup.ProblemMethodBinding;
 import org.eclipse.jdt.internal.compiler.lookup.ReferenceBinding;
 import org.eclipse.jdt.internal.compiler.lookup.Scope;
 import org.eclipse.jdt.internal.compiler.lookup.TypeBinding;
-import org.eclipse.jdt.internal.compiler.lookup.TypeIds;
 import org.eclipse.jdt.internal.compiler.problem.ProblemReporter;
+import org.eclipse.jdt.internal.core.search.matching.MethodPattern;
 
 public class PatchExtensionMethod {
 	static class Extension {
@@ -321,9 +321,11 @@ public class PatchExtensionMethod {
 				MethodBinding fixedBinding = scope.getMethod(extensionMethod.declaringClass, methodCall.selector, argumentTypes.toArray(new TypeBinding[0]), methodCall);
 				if (fixedBinding instanceof ProblemMethodBinding) {
 					methodCall.arguments = originalArgs;
-					if (fixedBinding.declaringClass != null) {
-						PostponedInvalidMethodError.invoke(scope.problemReporter(), methodCall, fixedBinding, scope);
+					// Sometimes the declaring class is null, in that case we have to create a new ProblemMethodBinding using the extension method's declaring class
+					if (fixedBinding.declaringClass == null) {
+						fixedBinding = new ProblemMethodBinding(fixedBinding.selector, fixedBinding.parameters, extensionMethod.declaringClass, fixedBinding.problemId());
 					}
+					PostponedInvalidMethodError.invoke(scope.problemReporter(), methodCall, fixedBinding, scope);
 				} else {
 					// If the extension method uses varargs, the last fixed binding parameter is an array but 
 					// the method arguments are not. Even thought we already know that the method is fine we still
@@ -345,13 +347,7 @@ public class PatchExtensionMethod {
 							arg.resolveType(scope);
 						}
 						if (arg.resolvedType != null) {
-							if (!param.isBaseType() && arg.resolvedType.isBaseType()) {
-								int id = arg.resolvedType.id;
-								arg.implicitConversion = TypeIds.BOXING | (id + (id << 4)); // magic see TypeIds
-							} else if (param.isBaseType() && !arg.resolvedType.isBaseType()) {
-								int id = parameters[i].id;
-								arg.implicitConversion = TypeIds.UNBOXING | (id + (id << 4)); // magic see TypeIds
-							}
+							arg.computeConversion(scope, param, arg.resolvedType);
 						}
 					}
 					
@@ -377,6 +373,17 @@ public class PatchExtensionMethod {
 		
 		MessageSend_postponedErrors.clear(methodCall);
 		return resolvedType;
+	}
+	
+	public static Object modifyMethodPattern(Object original) {
+		if (original != null && original instanceof MethodPattern) {
+			MethodPattern methodPattern = (MethodPattern) original;
+			if (methodPattern.parameterCount > 0) {
+				methodPattern.varargs = true;
+			}
+		}
+		
+		return original;
 	}
 
 	private static boolean requiresPolyBinding(Expression argument) {

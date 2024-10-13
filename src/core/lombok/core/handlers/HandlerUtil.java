@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2022 The Project Lombok Authors.
+ * Copyright (C) 2013-2024 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -81,6 +81,13 @@ public class HandlerUtil {
 	
 	public static final List<String> NONNULL_ANNOTATIONS, BASE_COPYABLE_ANNOTATIONS, COPY_TO_SETTER_ANNOTATIONS, COPY_TO_BUILDER_SINGULAR_SETTER_ANNOTATIONS, JACKSON_COPY_TO_BUILDER_ANNOTATIONS;
 	static {
+		// This is a list of annotations with a __highly specific meaning__: All annotations in this list indicate that passing null for the relevant item is __never__ acceptable, regardless of settings or circumstance.
+		// In other words, things like 'this models a database table, and the db table column has a nonnull constraint', or 'this represents a web form, and if this is null, the form is invalid' __do not count__ and should not be in this list;
+		// after all, you should be able to model invalid rows, or invalid forms.
+		
+		// In addition, the intent for these annotations is that they can be used 'in public' - it's not for internal-only usage annotations.
+		
+		// Presence of these annotations mean that lombok will generate null checks in any created setters and constructors.
 		NONNULL_ANNOTATIONS = Collections.unmodifiableList(Arrays.asList(new String[] {
 			"android.annotation.NonNull",
 			"android.support.annotation.NonNull",
@@ -88,34 +95,40 @@ public class HandlerUtil {
 			"androidx.annotation.NonNull",
 			"androidx.annotation.RecentlyNonNull",
 			"com.android.annotations.NonNull",
-			"com.google.firebase.database.annotations.NotNull",
-			"com.google.firebase.internal.NonNull",
-			"com.mongodb.lang.NonNull",
+			"com.google.firebase.database.annotations.NotNull", // Even though it's in a database package, it does mean semantically: "Check if never null at the language level", and not 'db column cannot be null'.
+			"com.mongodb.lang.NonNull", // Even though mongo is a DB engine, this semantically refers to language, not DB table designs (mongo is a document DB engine, so this isn't surprising perhaps).
 			"com.sun.istack.NotNull",
-			"com.sun.istack.internal.NotNull",
 			"com.unboundid.util.NotNull",
 			"edu.umd.cs.findbugs.annotations.NonNull",
 			"io.micrometer.core.lang.NonNull",
 			"io.reactivex.annotations.NonNull",
 			"io.reactivex.rxjava3.annotations.NonNull",
+			"jakarta.annotation.Nonnull",
 			"javax.annotation.Nonnull",
 			// "javax.validation.constraints.NotNull", // The field might contain a null value until it is persisted.
 			"libcore.util.NonNull",
 			"lombok.NonNull",
-			"org.antlr.v4.runtime.misc.NotNull",
 			"org.checkerframework.checker.nullness.qual.NonNull",
 			"org.checkerframework.checker.nullness.compatqual.NonNullDecl",
 			"org.checkerframework.checker.nullness.compatqual.NonNullType",
 			"org.codehaus.commons.nullanalysis.NotNull",
 			"org.eclipse.jdt.annotation.NonNull",
-			"org.eclipse.jgit.annotations.NonNull",
-			"org.eclipse.lsp4j.jsonrpc.validation.NonNull",
 			"org.jetbrains.annotations.NotNull",
 			"org.jmlspecs.annotation.NonNull",
+			"org.jspecify.annotations.NonNull",
 			"org.netbeans.api.annotations.common.NonNull",
 			"org.springframework.lang.NonNull",
 			"reactor.util.annotation.NonNull",
 		}));
+		
+		// This is a list of annotations that lombok will automatically 'copy' - be it to the method (when generating a getter for a field annotated with one of these), or to a parameter (generating a setter, with-er, or builder 'setter').
+		// You can't disable this behaviour, so the list should only contain annotations where 'copy it!' is the desired behaviour in at least 95%, preferably 98%, of all non-buggy usages.
+		// As a general rule, lombok takes on maintenance of adding all nullity-related annotations here, _if_ they fit the definition of language-level nullity as per {@see #NONNULL_ANNOTATIONS}. As a consequence, everything from the NONNULL list should probably
+		// also be in this list, and any nullity-related annotation in this list implies the non-null variant should be in the NONNULL_ANNOTATIONS list, unless there is no such annotation.
+		
+		// NB: Intent is that we get rid of a lot of this list and instead move to a system whereby lombok users explicitly opt in to the desired behaviour per 'library' (e.g per "Jackson annotations", "Checker framework annotations", etc.
+		// - the problem is, how do we know that the owners of a certain annotation intend for it to be copied in this fashion? What to do if a bug report is filed that we should not always copy it? Hence, care should be taken when editing this list.
+		// When in doubt, leave it out - this list can be added to dynamically by {See lombok.ConfigurationKeys#COPYABLE_ANNOTATIONS}.
 		BASE_COPYABLE_ANNOTATIONS = Collections.unmodifiableList(Arrays.asList(new String[] {
 			"android.annotation.NonNull",
 			"android.annotation.Nullable",
@@ -129,19 +142,13 @@ public class HandlerUtil {
 			"androidx.annotation.RecentlyNullable",
 			"com.android.annotations.NonNull",
 			"com.android.annotations.Nullable",
-			"com.beust.jcommander.internal.Nullable",
-			"com.google.api.server.spi.config.Nullable",
+			// "com.google.api.server.spi.config.Nullable", - let's think about this one a little, as it is targeted solely at parameters, so you can't even put it on fields. If we choose to support it, we should REMOVE it from the field, then - that's not something we currently support.
 			"com.google.firebase.database.annotations.NotNull",
 			"com.google.firebase.database.annotations.Nullable",
-			"com.google.firebase.internal.NonNull",
-			"com.google.firebase.internal.Nullable",
-			"com.google.gerrit.common.Nullable",
 			"com.mongodb.lang.NonNull",
 			"com.mongodb.lang.Nullable",
 			"com.sun.istack.NotNull",
 			"com.sun.istack.Nullable",
-			"com.sun.istack.internal.NotNull",
-			"com.sun.istack.internal.Nullable",
 			"com.unboundid.util.NotNull",
 			"com.unboundid.util.Nullable",
 			"edu.umd.cs.findbugs.annotations.CheckForNull",
@@ -155,19 +162,15 @@ public class HandlerUtil {
 			"io.reactivex.annotations.Nullable",
 			"io.reactivex.rxjava3.annotations.NonNull",
 			"io.reactivex.rxjava3.annotations.Nullable",
+			"jakarta.annotation.Nonnull",
+			"jakarta.annotation.Nullable",
 			"javax.annotation.CheckForNull",
 			"javax.annotation.Nonnull",
-			"javax.annotation.Nonnull",
 			"javax.annotation.Nullable",
-			"javax.validation.constraints.NotNull",
-			"junitparams.converters.Nullable",
+//			"javax.validation.constraints.NotNull", // - this should definitely not be included; validation is not about language-level nullity, therefore should not be in this core list.
 			"libcore.util.NonNull",
 			"libcore.util.Nullable",
 			"lombok.NonNull",
-			"org.antlr.v4.runtime.misc.NotNull",
-			"org.apache.avro.reflect.Nullable",
-			"org.apache.cxf.jaxrs.ext.Nullable",
-			"org.apache.shindig.common.Nullable",
 			"org.checkerframework.checker.nullness.compatqual.NonNullDecl",
 			"org.checkerframework.checker.nullness.compatqual.NonNullType",
 			"org.checkerframework.checker.nullness.compatqual.NullableDecl",
@@ -178,27 +181,26 @@ public class HandlerUtil {
 			"org.codehaus.commons.nullanalysis.Nullable",
 			"org.eclipse.jdt.annotation.NonNull",
 			"org.eclipse.jdt.annotation.Nullable",
-			"org.eclipse.jgit.annotations.NonNull",
-			"org.eclipse.jgit.annotations.Nullable",
-			"org.eclipse.lsp4j.jsonrpc.validation.NonNull",
 			"org.jetbrains.annotations.NotNull",
 			"org.jetbrains.annotations.Nullable",
 			"org.jetbrains.annotations.UnknownNullability",
 			"org.jmlspecs.annotation.NonNull",
 			"org.jmlspecs.annotation.Nullable",
-			"org.jspecify.nullness.Nullable",
-			"org.jspecify.nullness.NullnessUnspecified",
+			"org.jspecify.annotations.Nullable",
+			"org.jspecify.annotations.NonNull",
 			"org.netbeans.api.annotations.common.CheckForNull",
 			"org.netbeans.api.annotations.common.NonNull",
 			"org.netbeans.api.annotations.common.NullAllowed",
 			"org.netbeans.api.annotations.common.NullUnknown",
 			"org.springframework.lang.NonNull",
 			"org.springframework.lang.Nullable",
-
+			"reactor.util.annotation.NonNull",
+			"reactor.util.annotation.Nullable",
+			
 			// Checker Framework annotations.
 			// To update Checker Framework annotations, run:
 			// grep --recursive --files-with-matches -e '^@Target\b.*TYPE_USE' $CHECKERFRAMEWORK/checker/src/main/java $CHECKERFRAMEWORK/checker-qual/src/main/java $CHECKERFRAMEWORK/checker-util/src/main/java $CHECKERFRAMEWORK/framework/src/main/java | grep '\.java$' | sed 's/.*\/java\//\t\t\t"/' | sed 's/\.java$/",/' | sed 's/\//./g' | sort
-			// Only add new annotations, do not remove annotations that have been removed from the lastest version of the Checker Framework.
+			// Only add new annotations, do not remove annotations that have been removed from the latest version of the Checker Framework.
 			"org.checkerframework.checker.builder.qual.CalledMethods",
 			"org.checkerframework.checker.builder.qual.NotCalledMethods",
 			"org.checkerframework.checker.calledmethods.qual.CalledMethods",
@@ -908,9 +910,13 @@ public class HandlerUtil {
 		}
 	}
 	
-	public static String stripLinesWithTagFromJavadoc(String javadoc, JavadocTag tag) {
+	public static String stripLinesWithTagFromJavadoc(String javadoc, JavadocTag... tags) {
 		if (javadoc == null || javadoc.isEmpty()) return javadoc;
-		return tag.pattern.matcher(javadoc).replaceAll("").trim();
+		String result = javadoc;
+		for (JavadocTag tag : tags) {
+			result = tag.pattern.matcher(result).replaceAll("").trim();
+		}
+		return result;
 	}
 	
 	public static String stripSectionsFromJavadoc(String javadoc) {
@@ -966,16 +972,35 @@ public class HandlerUtil {
 	
 	public static String addJavadocLine(String in, String line) {
 		if (in == null) return line;
-		if (in.endsWith("\n")) return in + line + "\n";
+		if (in.endsWith("\n")) return in + line;
 		return in + "\n" + line;
 	}
 
 	public static String getParamJavadoc(String methodComment, String param) {
 		if (methodComment == null || methodComment.isEmpty()) return methodComment;
-		Pattern pattern = Pattern.compile("@param " + param + " (\\S|\\s)+?(?=^ ?@)", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
+		Pattern pattern = Pattern.compile("@param " + param + " (\\S|\\s)+?(?=^ ?@|\\z)", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
 		Matcher matcher = pattern.matcher(methodComment);
 		if (matcher.find()) {
 			return matcher.group();
+		}
+		return null;
+	}
+	
+	public static String getConstructorJavadocHeader(String typeName) {
+		return "Creates a new {@code " + typeName + "} instance.\n\n";
+	}
+	
+	public static String getConstructorParameterJavadoc(String paramName, String fieldJavadoc) {
+		String fieldBaseJavadoc = stripSectionsFromJavadoc(fieldJavadoc);
+		
+		String paramJavadoc = getParamJavadoc(fieldBaseJavadoc, paramName);
+		if (paramJavadoc != null) {
+			return paramJavadoc;
+		}
+		
+		String javadocWithoutTags = stripLinesWithTagFromJavadoc(fieldBaseJavadoc, JavadocTag.PARAM, JavadocTag.RETURN);
+		if (javadocWithoutTags != null) {
+			return "@param " + paramName + " " + javadocWithoutTags;
 		}
 		return null;
 	}

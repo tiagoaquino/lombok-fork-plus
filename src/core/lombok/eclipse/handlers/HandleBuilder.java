@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2021 The Project Lombok Authors.
+ * Copyright (C) 2013-2024 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -36,6 +36,7 @@ import org.eclipse.jdt.internal.compiler.ast.AbstractVariableDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.AllocationExpression;
 import org.eclipse.jdt.internal.compiler.ast.Annotation;
 import org.eclipse.jdt.internal.compiler.ast.Argument;
+import org.eclipse.jdt.internal.compiler.ast.ArrayAllocationExpression;
 import org.eclipse.jdt.internal.compiler.ast.ArrayInitializer;
 import org.eclipse.jdt.internal.compiler.ast.Assignment;
 import org.eclipse.jdt.internal.compiler.ast.CompilationUnitDeclaration;
@@ -918,7 +919,20 @@ public class HandleBuilder extends EclipseAnnotationHandler<Builder> {
 		out.bits |= ECLIPSE_DO_NOT_TOUCH_FLAG;
 		FieldDeclaration fd = (FieldDeclaration) fieldNode.get();
 		out.returnType = copyType(fd.type, source);
-		out.statements = new Statement[] {new ReturnStatement(fd.initialization, pS, pE)};
+		
+		// Convert short array initializers from `{1,2}` to `new int[]{1,2}`
+		Expression initialization;
+		if (fd.initialization instanceof ArrayInitializer) {
+			ArrayAllocationExpression arrayAllocationExpression = new ArrayAllocationExpression();
+			arrayAllocationExpression.initializer = (ArrayInitializer) fd.initialization;
+			arrayAllocationExpression.type = generateQualifiedTypeRef(fd, fd.type.getTypeName());
+			arrayAllocationExpression.dimensions = new Expression[fd.type.dimensions()];
+			initialization = arrayAllocationExpression;
+		} else {
+			initialization = fd.initialization;
+		}
+		
+		out.statements = new Statement[] {new ReturnStatement(initialization, pS, pE)};
 		fd.initialization = null;
 		
 		out.traverse(new SetGeneratedByVisitor(source), ((TypeDeclaration) fieldNode.up().get()).scope);
@@ -983,7 +997,7 @@ public class HandleBuilder extends EclipseAnnotationHandler<Builder> {
 				}
 				
 				if (field == null) {
-					FieldDeclaration fd = new FieldDeclaration(bfd.builderFieldName, 0, 0);
+					FieldDeclaration fd = new FieldDeclaration(bfd.builderFieldName.clone(), 0, 0);
 					fd.bits |= Eclipse.ECLIPSE_DO_NOT_TOUCH_FLAG;
 					fd.modifiers = ClassFileConstants.AccPrivate;
 					fd.type = copyType(bfd.type);
@@ -1039,20 +1053,11 @@ public class HandleBuilder extends EclipseAnnotationHandler<Builder> {
 		MethodDeclaration setter = HandleSetter.createSetter(td, deprecate, fieldNode, setterName, bfd.name, bfd.nameOfSetFlag, job.oldChain, toEclipseModifier(job.accessInners),
 			job.sourceNode, methodAnnsList, bfd.annotations != null ? Arrays.asList(copyAnnotations(source, bfd.annotations)) : Collections.<Annotation>emptyList());
 		if (job.sourceNode.up().getKind() == Kind.METHOD) {
-			copyJavadocFromParam(bfd.originalFieldNode.up(), setter, td, bfd.name.toString());
+			copyJavadocFromParam(bfd.originalFieldNode.up(), setter, td, new String(bfd.name));
 		} else {
 			copyJavadoc(bfd.originalFieldNode, setter, td, CopyJavadoc.SETTER, true);
 		}
 		injectMethod(job.builderType, setter);
-	}
-	
-	private void copyJavadocFromParam(EclipseNode from, MethodDeclaration to, TypeDeclaration type, String param) {
-		try {
-			CompilationUnitDeclaration cud = (CompilationUnitDeclaration) from.top().get();
-			String methodComment = getDocComment(from);
-			String newJavadoc = addReturnsThisIfNeeded(getParamJavadoc(methodComment, param));
-			setDocComment(cud, type, to, newJavadoc);
-		} catch (Exception ignore) {}
 	}
 	
 	public void makeBuilderClass(BuilderJob job) {

@@ -1,4 +1,4 @@
-// version 17:
+// version 17:18
 public class Switch17 {
 	String switchPatternMatching(Object o) {
 		return switch (o) {

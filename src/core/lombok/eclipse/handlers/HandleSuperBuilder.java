@@ -51,7 +51,6 @@ import org.eclipse.jdt.internal.compiler.ast.FieldDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.FieldReference;
 import org.eclipse.jdt.internal.compiler.ast.IfStatement;
 import org.eclipse.jdt.internal.compiler.ast.Initializer;
-import org.eclipse.jdt.internal.compiler.ast.MarkerAnnotation;
 import org.eclipse.jdt.internal.compiler.ast.MessageSend;
 import org.eclipse.jdt.internal.compiler.ast.MethodDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.NullLiteral;
@@ -92,6 +91,7 @@ import lombok.core.HandlerPriority;
 import lombok.eclipse.Eclipse;
 import lombok.eclipse.EclipseAnnotationHandler;
 import lombok.eclipse.EclipseNode;
+import lombok.eclipse.handlers.EclipseHandlerUtil.CopyJavadoc;
 import lombok.eclipse.handlers.EclipseHandlerUtil.MemberExistsResult;
 import lombok.eclipse.handlers.EclipseSingularsRecipes.EclipseSingularizer;
 import lombok.eclipse.handlers.EclipseSingularsRecipes.SingularData;
@@ -387,15 +387,15 @@ public class HandleSuperBuilder extends EclipseAnnotationHandler<SuperBuilder> {
 			injectMethod(job.builderType, generateStaticFillValuesMethod(job, annInstance.setterPrefix()));
 		}
 		
-		// Generate abstract self() and build() methods in the abstract builder.
-		injectMethod(job.builderType, generateAbstractSelfMethod(job, superclassBuilderClass != null, builderGenericName));
-		job.setBuilderToAbstract();
-		injectMethod(job.builderType, generateAbstractBuildMethod(job, superclassBuilderClass != null, classGenericName));
-		
 		// Create the setter methods in the abstract builder.
 		for (BuilderFieldData bfd : job.builderFields) {
 			generateSetterMethodsForBuilder(job, bfd, builderGenericName, annInstance.setterPrefix());
 		}
+		
+		// Generate abstract self() and build() methods in the abstract builder.
+		injectMethod(job.builderType, generateAbstractSelfMethod(job, superclassBuilderClass != null, builderGenericName));
+		job.setBuilderToAbstract();
+		injectMethod(job.builderType, generateAbstractBuildMethod(job, superclassBuilderClass != null, classGenericName));
 		
 		// Create the toString() method for the abstract builder.
 		if (methodExists("toString", job.builderType, 0) == MemberExistsResult.NOT_EXISTS) {
@@ -948,7 +948,7 @@ public class HandleSuperBuilder extends EclipseAnnotationHandler<SuperBuilder> {
 				}
 				
 				if (field == null) {
-					FieldDeclaration fd = new FieldDeclaration(bfd.builderFieldName, 0, 0);
+					FieldDeclaration fd = new FieldDeclaration(bfd.builderFieldName.clone(), 0, 0);
 					fd.bits |= Eclipse.ECLIPSE_DO_NOT_TOUCH_FLAG;
 					fd.modifiers = ClassFileConstants.AccPrivate;
 					fd.type = copyType(bfd.type);
@@ -1011,6 +1011,11 @@ public class HandleSuperBuilder extends EclipseAnnotationHandler<SuperBuilder> {
 		addCheckerFrameworkReturnsReceiver(returnType, job.source, job.checkerFramework);
 		MethodDeclaration setter = HandleSetter.createSetter(td, deprecate, fieldNode, setterName, paramName, nameOfSetFlag, returnType, returnStatement, ClassFileConstants.AccPublic,
 			job.sourceNode, methodAnnsList, annosOnParam != null ? Arrays.asList(copyAnnotations(job.source, annosOnParam)) : Collections.<Annotation>emptyList());
+		if (job.sourceNode.up().getKind() == Kind.METHOD) {
+			copyJavadocFromParam(originalFieldNode.up(), setter, td, paramName.toString());
+		} else {
+			copyJavadoc(originalFieldNode, setter, td, CopyJavadoc.SETTER, true);
+		}
 		injectMethod(job.builderType, setter);
 	}
 	
@@ -1100,13 +1105,28 @@ public class HandleSuperBuilder extends EclipseAnnotationHandler<SuperBuilder> {
 		if (td.fields != null) {
 			for (FieldDeclaration field : td.fields) {
 				if (field instanceof Initializer) continue; 
-				char[][] typeName = field.type.getTypeName();
-				if (typeName.length >= 1) // Add the first token, because only that can collide.
-					usedNames.add(String.valueOf(typeName[0]));
+				addFirstToken(usedNames, field.type);
+			}
+		}
+		
+		// 4. Add extends and implements clauses.
+		addFirstToken(usedNames, td.superclass);
+		if (td.superInterfaces != null) {
+			for (TypeReference typeReference : td.superInterfaces) {
+				addFirstToken(usedNames, typeReference);
 			}
 		}
 		
 		return usedNames;
+	}
+
+	private void addFirstToken(java.util.Set<String> usedNames, TypeReference type) {
+		if (type == null) 
+			return;
+		// Add the first token, because only that can collide.
+		char[][] typeName = type.getTypeName();
+		if (typeName != null && typeName.length >= 1)
+			usedNames.add(String.valueOf(typeName[0]));
 	}
 	
 	private String generateNonclashingNameFor(String classGenericName, java.util.Set<String> typeParamStrings) {

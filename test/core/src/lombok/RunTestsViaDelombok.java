@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2021 The Project Lombok Authors.
+ * Copyright (C) 2009-2024 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -29,9 +29,12 @@ import java.io.PrintStream;
 import java.io.StringWriter;
 import java.io.UnsupportedEncodingException;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -56,42 +59,47 @@ import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
 import com.sun.tools.javac.tree.JCTree.JCIdent;
 import com.sun.tools.javac.tree.JCTree.JCMethodDecl;
 import com.sun.tools.javac.tree.JCTree.JCModifiers;
+import com.sun.tools.javac.tree.JCTree.JCPrimitiveTypeTree;
 import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
 import com.sun.tools.javac.tree.JCTree.TypeBoundKind;
 import com.sun.tools.javac.tree.TreeScanner;
 
 import lombok.delombok.Delombok;
 import lombok.javac.CapturingDiagnosticListener;
-import lombok.javac.CapturingDiagnosticListener.CompilerMessage;
 import lombok.javac.Javac;
 
 public class RunTestsViaDelombok extends AbstractRunTests {
 	private Delombok delombok = new Delombok();
 	
 	@Override
-	public boolean transformCode(Collection<CompilerMessage> messages, StringWriter result, final File file, String encoding, Map<String, String> formatPreferences, int version, boolean checkPositions) throws Throwable {
+	public TransformationResult transformCode(final File file, TestParameters parameters) throws Throwable {
+		TransformationResult result = new TransformationResult();
 		delombok.setVerbose(true);
 		ChangedChecker cc = new ChangedChecker();
 		delombok.setFeedback(cc.feedback);
 		delombok.setForceProcess(true);
-		delombok.setCharset(encoding == null ? "UTF-8" : encoding);
-		delombok.setFormatPreferences(formatPreferences);
+		delombok.setCharset(parameters.getEncoding() == null ? "UTF-8" : parameters.getEncoding());
+		delombok.setFormatPreferences(parameters.getFormatPreferences());
 		
-		delombok.setDiagnosticsListener(new CapturingDiagnosticListener(file, messages));
+		delombok.setDiagnosticsListener(new CapturingDiagnosticListener(file, result.getMessages()));
 		
-		if (checkPositions) delombok.addAdditionalAnnotationProcessor(new ValidatePositionProcessor(version));
+		if (parameters.isCheckPositions()) delombok.addAdditionalAnnotationProcessor(new ValidatePositionProcessor(parameters.getMinVersion()));
 		delombok.addAdditionalAnnotationProcessor(new ValidateTypesProcessor());
+		delombok.addAdditionalAnnotationProcessor(new ValidateNoDuplicateTreeNodeProcessor());
 		
 		delombok.addFile(file.getAbsoluteFile().getParentFile(), file.getName());
 		delombok.setSourcepath(file.getAbsoluteFile().getParent());
 		String bcp = System.getProperty("delombok.bootclasspath");
 		if (bcp != null) delombok.setBootclasspath(bcp);
-		delombok.setWriter(result);
+		StringWriter sw = new StringWriter();
+		delombok.setWriter(sw);
 		Locale originalLocale = Locale.getDefault();
 		try {
 			Locale.setDefault(Locale.ENGLISH);
 			delombok.delombok();
-			return cc.isChanged();
+			result.setOutput(sw.toString());
+			result.setChanged(cc.isChanged());
+			return result;
 		} finally {
 			Locale.setDefault(originalLocale);
 		}
@@ -230,6 +238,68 @@ public class RunTestsViaDelombok extends AbstractRunTests {
 				}
 			});
 		}
+	}
+	
+	public static class ValidateNoDuplicateTreeNodeProcessor extends TreeProcessor {
+
+		private String craftFailMsg(Collection<JCTree> astContext) {
+			StringBuilder msg = new StringBuilder();
+			for (JCTree t : astContext) {
+				msg.append("\n  ").append(t.getClass().getSimpleName());
+				String asStr = t.toString();
+				if (asStr.length() < 80) msg.append(": ").append(asStr);
+				else if (t instanceof JCClassDecl) msg.append(": ").append(((JCClassDecl) t).name);
+				else if (t instanceof JCMethodDecl) msg.append(": ").append(((JCMethodDecl) t).name);
+				else if (t instanceof JCVariableDecl) msg.append(": ").append(((JCVariableDecl) t).name);
+			}
+			return msg.append("\n-------").toString();
+		}
+		
+		@Override
+		void processCompilationUnit(JCCompilationUnit unit) {
+			final Deque<JCTree> parents = new ArrayDeque<JCTree>();
+			parents.add(unit);
+			
+			final Map<JCTree, List<JCTree>> knownTreeNode = new IdentityHashMap<JCTree, List<JCTree>>();
+			
+			unit.accept(new TreeScanner() {
+				private JCTree parent;
+				
+				@Override
+				public void scan(JCTree tree) {
+					parent = parents.peek();
+					
+					if (tree == null) return;
+					if (tree instanceof JCPrimitiveTypeTree) return;
+					// javac generates duplicates for record members
+					if (tree instanceof JCVariableDecl && (((JCVariableDecl) tree).mods.flags & Javac.GENERATED_MEMBER) != 0) return;
+					
+					List<JCTree> knownNodeContext = knownTreeNode.put(tree, new ArrayList<JCTree>(parents));
+					if (knownNodeContext != null) {
+						// javac generates two JCVariableDecl elements for 'int a, b;'
+						if (parent instanceof JCVariableDecl) {
+							if (tree instanceof JCModifiers) return;
+							if (tree instanceof JCIdent) return;
+						}
+						
+						fail("Node " + tree + " found twice:" + craftFailMsg(knownNodeContext) + craftFailMsg(parents));
+					}
+					
+					parents.push(tree);
+					super.scan(tree);
+					parents.pop();
+				}
+				
+				/**
+				 * We always generate shallow copies for annotations
+				 */
+				@Override
+				public void visitAnnotation(JCAnnotation tree) {
+					return;
+				}
+			});
+		}
+		
 	}
 	
 	public static abstract class TreeProcessor extends AbstractProcessor {

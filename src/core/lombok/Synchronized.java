@@ -42,7 +42,7 @@ import java.lang.annotation.Target;
 public @interface Synchronized {
 	/**
 	 * Optional: specify the name of a different field to lock on. It is a compile time error if this field
-	 * doesn't already exist (the fields are automatically generated only if you don't specify a specific name.
+	 * doesn't already exist (the fields are automatically generated only if you don't specify a specific name).
 	 * 
 	 * @return Name of the field to lock on (blank = generate one).
 	 */

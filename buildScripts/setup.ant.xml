@@ -19,7 +19,7 @@
   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
   THE SOFTWARE.
 -->
-<project name="lombok.setup" default="deps" xmlns:ivy="antlib:com.zwitserloot.ivyplusplus" basedir="..">
+<project name="lombok.setup" default="deps" xmlns:ivy="antlib:com.zwitserloot.ivyplusplus" xmlns:unless="ant:unless" basedir="..">
 	<description>
 This buildfile is part of projectlombok.org. It sets up the build itself.
 	</description>
@@ -34,58 +34,33 @@ This buildfile is part of projectlombok.org. It sets up the build itself.
 	
 	<property name="jdk6-rt.loc" location="lib/openjdk6_rt.jar" />
 	<property name="jdk8-rt.loc" location="lib/openjdk8_rt.jar" />
+	<property name="rtstubs18.loc" location="lib/rtstubs18.jar" />
 	<available file="${jdk6-rt.loc}" property="jdk6-rt.available" />
 	<available file="${jdk8-rt.loc}" property="jdk8-rt.available" />
+	<available file="${rtstubs18.loc}" property="rtstubs18.available" />
 	<property name="ssh.configuration.file" location="ssh.configuration" />
 	
-	<target name="-setup.ssh.ask">
-		<property file="${ssh.configuration.file}" />
-		<fail>
-			Your ssh.configuration file is corrupted; delete it and rerun this script.
-			<condition>
-				<or>
-					<and>
-						<isset property="ssh.username" />
-						<equals arg1="" arg2="${ssh.username}" />
-					</and>
-					<and>
-						<isset property="ssh.keyfile" />
-						<equals arg1="" arg2="${ssh.keyfile}" />
-					</and>
-				</or>
-			</condition>
-		</fail>
-		<fail>
-			The keyfile configured in your ${ssh.configuration.file} file does not exist.
-			<condition>
-				<and>
-					<isset property="ssh.keyfile" />
-					<not><available file="${ssh.keyfile}" /></not>
-				</and>
-			</condition>
-		</fail>
-		
-		<condition property="ssh.configuration.write">
+	<property name="gpg.keyrings" location="gpg.keyring" />
+	<property name="exe.gpg" value="gpg" />
+	<property name="exe.curl" value="curl" />
+	<property name="exe.git" value="git" />
+	
+	<condition property="os.supported">
+		<and>
 			<or>
-				<not><isset property="ssh.username" /></not>
-				<not><isset property="ssh.keyfile" /></not>
+				<os family="unix" />
+				<os family="windows" />
+				<os name="Mac OS X" />
 			</or>
-		</condition>
-		<input message="What is your SSH username on the projectlombok.org server? (Enter to abort)." addproperty="ssh.username" />
-		<fail>Aborted<condition><equals arg1="" arg2="${ssh.username}" /></condition></fail>
-		<input message="Where is your ssh keyfile located? (Enter to abort)." addproperty="ssh.keyfile" defaultvalue="${user.home}/.ssh/id_rsa" />
-		<fail>File ${ssh.keyfile} does not exist<condition><not><available file="${ssh.keyfile}" /></not></condition></fail>
-	</target>
-	
-	<target name="-setup.ssh.save" if="ssh.configuration.write">
-		<propertyfile file="${ssh.configuration.file}" comment="SSH connect info for projectlombok.org.">
-			<entry key="ssh.username" value="${ssh.username}" />
-			<entry key="ssh.keyfile" value="${ssh.keyfile}" />
-		</propertyfile>
-		<echo>Your connection info has been written to ${ssh.configuration.file} and will be remembered for future invocations.</echo>
-	</target>
-	
-	<target name="setup.ssh" depends="-setup.ssh.ask, -setup.ssh.save" />
+			<or>
+				<os arch="aarch64" />
+				<os arch="x86-64" />
+				<os arch="x86_64" />
+				<os arch="amd64" />
+			</or>
+		</and>
+	</condition>
+	<fail unless="os.supported">Full eclipse testing requires downloading a native SWT binding. This script knows how to download for OS = [mac, linux, or windows] and architecture = [aarch64 or x86-64]. You have something different, you unique snowflake you. Your OS: "${os.name}", Your arch: "${os.arch}".</fail>
 	
 	<target name="-autoclean.check">
 		<available type="dir" file="build" property="existingbuild.present" />
@@ -140,7 +115,7 @@ This buildfile is part of projectlombok.org. It sets up the build itself.
 	
 	<target name="-ipp.load" depends="-ipp.download">
 		<taskdef classpath="lib/ivyplusplus.jar" resource="com/zwitserloot/ivyplusplus/antlib.xml" uri="antlib:com.zwitserloot.ivyplusplus" />
-		<ivy:ensureippversion version="1.40" property="ivyplusplus.minimumAvailable" />
+		<ivy:ensureippversion version="1.42" property="ivyplusplus.minimumAvailable" />
 	</target>
 	
 	<target name="-ipp.redownload" unless="ivyplusplus.minimumAvailable">
@@ -167,12 +142,46 @@ This buildfile is part of projectlombok.org. It sets up the build itself.
 		<get src="https://projectlombok.org/ivyrepo/langtools/rt-openjdk8.jar" dest="${jdk8-rt.loc}" verbose="true" usetimestamp="true" />
 	</target>
 	
+	<target name="deps.rtstubs18" unless="rtstubs18.available">
+		<echo>To test in eclipse, we need a java runtime, which will now be downloaded...</echo>
+		<mkdir dir="lib" />
+		<get src="https://github.com/eclipse-jdt/eclipse.jdt.ui/raw/master/org.eclipse.jdt.ui.tests/testresources/rtstubs18.jar" dest="${rtstubs18.loc}" verbose="true" usetimestamp="true" />
+	</target>
+	
 	<target name="deps.jdk-runtime" depends="deps.jdk6-runtime, deps.jdk8-runtime" />
 	
 	<target name="deps.custom" depends="ivy.config" description="Download the dependencies that comprise a configuration (from ivy.xml)">
 		<fail unless="deps.conf">Supply ant with -Ddeps.conf=confname to pick the configuration you want to fetch</fail>
 		<ivy:resolve file="buildScripts/ivy.xml" refresh="true" conf="${deps.conf}" />
 		<ivy:retrieve symlink="true" />
+	</target>
+	
+	<target name="deps.eclipse.oxygen" depends="deps.rtstubs18, compile.support">
+		<fetchdep.eclipse.osgi name="oxygen" version="4.7" />
+	</target>
+	
+	<target name="deps.eclipse.2022-03" depends="deps.rtstubs18, compile.support">
+		<fetchdep.eclipse.osgi name="2022-03" version="4.23" />
+	</target>
+	
+	<target name="deps.eclipse.2023-09" depends="deps.rtstubs18, compile.support">
+		<fetchdep.eclipse.osgi name="2023-09" version="4.29" />
+	</target>
+	
+	<target name="deps.eclipse.2023-12" depends="deps.rtstubs18, compile.support">
+		<fetchdep.eclipse.osgi name="2023-12" version="4.30" />
+	</target>
+	
+	<target name="deps.eclipse.2024-03" depends="deps.rtstubs18, compile.support">
+		<fetchdep.eclipse.osgi name="2024-03" version="4.31" />
+	</target>
+	
+	<target name="deps.eclipse.2024-06" depends="deps.rtstubs18, compile.support">
+		<fetchdep.eclipse.osgi name="2024-06" version="4.32" />
+	</target>
+	
+	<target name="deps.eclipse.integration" depends="deps.rtstubs18, compile.support">
+		<fetchdep.eclipse.osgi name="I-build" version="I-builds" />
 	</target>
 	
 	<macrodef name="fetchdep.ecj">
@@ -195,6 +204,44 @@ This buildfile is part of projectlombok.org. It sets up the build itself.
 		</sequential>
 	</macrodef>
 	
+	<macrodef name="fetchdep.eclipse.osgi">
+		<attribute name="name" />
+		<attribute name="version" />
+		<sequential>
+			<fetchdep.eclipse.updatesite name="@{name}" version="@{version}">
+				<bundles>
+					<!-- osgi.extender dependecies -->
+					<arg value="osgi.bundle:org.apache.felix.scr" />
+					<arg value="osgi.bundle:org.apache.aries.spifly.dynamic.bundle" />
+					<!-- Real dependencies -->
+					<arg value="osgi.bundle:org.eclipse.jdt.core" />
+					<arg value="osgi.bundle:org.eclipse.jdt.ui" />
+				</bundles>
+			</fetchdep.eclipse.updatesite>
+		</sequential>
+	</macrodef>
+	
+	<macrodef name="fetchdep.eclipse.updatesite">
+		<attribute name="target" default="testenv" />
+		<attribute name="name" />
+		<attribute name="version" />
+		<attribute name="resolveDependencies" default="true" />
+		<element name="bundles" />
+		<sequential>
+			<java classname="lombok.eclipse.dependencies.DownloadEclipseDependencies" failonerror="true">
+				<classpath>
+					<path refid="cp.buildtools" />
+					<pathelement location="build/support" />
+				</classpath>
+				<arg value="@{target}" />
+				<arg value="eclipse-@{name}" />
+				<arg value="https://download.eclipse.org/eclipse/updates/@{version}/" />
+				<arg value="@{resolveDependencies}" />
+				<bundles />
+			</java>
+		</sequential>
+	</macrodef>
+	
 	<target name="deps" depends="ivy.config, deps.jdk-runtime" description="Downloads all dependencies needed for common tasks">
 		<ivy:resolve file="buildScripts/ivy.xml" refresh="true" conf="javac6,javac8,ecj8,build,eclipse-oxygen,mapstruct,sources,stripe,buildtools,test" />
 		<ivy:retrieve symlink="true" />
@@ -207,6 +254,25 @@ This buildfile is part of projectlombok.org. It sets up the build itself.
 		<ivy:cachepath pathid="cp.stripe" conf="stripe" />
 		<ivy:cachepath pathid="cp.buildtools" conf="buildtools" />
 		<ivy:cachepath pathid="cp.test" conf="test" />
+	</target>
+	
+	<target name="-setup.ossrh">
+		<loadfile quiet="true" failonerror="false" encoding="UTF-8" property="ossrh.password" srcfile="${gpg.keyrings}/ossrh.password">
+			<filterchain>
+				<striplinebreaks />
+			</filterchain>
+		</loadfile>
+		<property name="ossrh.username" value="rzwitserloot" />
+	</target>
+	
+	<target name="test.release.version" depends="-test.release.version" />
+	<target name="-test.release.version" depends="version" unless="skip.test.version">
+		<fail>
+			<condition>
+				<not><matches pattern="^.*[02468]$" string="${lombok.version}"/></not>
+			</condition>
+			You need to manually sort out the changelog, and set Version.java so that the release version is an even number (and the name isn't Edgy Guinea Pig). Use -Dskip.test.version= to override.
+		</fail>
 	</target>
 	
 	<fail>ant needs to be at least v1.10.0 or higher to build lombok. Your version is: ${ant.version}

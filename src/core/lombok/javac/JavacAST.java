@@ -36,7 +36,6 @@ import javax.annotation.processing.Messager;
 import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
 
-import com.sun.tools.javac.util.JCDiagnostic;
 import lombok.core.AST;
 import lombok.core.CleanupRegistry;
 import lombok.core.CleanupTask;
@@ -53,6 +52,7 @@ import com.sun.tools.javac.tree.JCTree.JCBlock;
 import com.sun.tools.javac.tree.JCTree.JCCatch;
 import com.sun.tools.javac.tree.JCTree.JCClassDecl;
 import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
+import com.sun.tools.javac.tree.JCTree.JCEnhancedForLoop;
 import com.sun.tools.javac.tree.JCTree.JCExpression;
 import com.sun.tools.javac.tree.JCTree.JCFieldAccess;
 import com.sun.tools.javac.tree.JCTree.JCIdent;
@@ -63,6 +63,7 @@ import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
 import com.sun.tools.javac.tree.JCTree.JCWildcard;
 import com.sun.tools.javac.tree.TreeMaker;
 import com.sun.tools.javac.util.Context;
+import com.sun.tools.javac.util.JCDiagnostic;
 import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
 import com.sun.tools.javac.util.Log;
 import com.sun.tools.javac.util.Name;
@@ -77,7 +78,6 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 	private final JavacTreeMaker treeMaker;
 	private final Symtab symtab;
 	private final JavacTypes javacTypes;
-	private final Log log;
 	private final ErrorLog errorLogger;
 	private final Context context;
 	private static final URI NOT_CALCULATED_MARKER = URI.create("https://projectlombok.org/not/calculated");
@@ -86,16 +86,16 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 	/**
 	 * Creates a new JavacAST of the provided Compilation Unit.
 	 * 
-	 * @param messager A Messager for warning and error reporting.
+	 * @param errorLog A logger for warning and error reporting.
 	 * @param context A Context object for interfacing with the compiler.
 	 * @param top The compilation unit, which serves as the top level node in the tree to be built.
+	 * @param cleanup The registry for cleanup tasks.
 	 */
-	public JavacAST(Messager messager, Context context, JCCompilationUnit top, CleanupRegistry cleanup) {
+	public JavacAST(ErrorLog errorLog, Context context, JCCompilationUnit top, CleanupRegistry cleanup) {
 		super(sourceName(top), PackageName.getPackageName(top), new JavacImportList(top), statementTypes());
 		setTop(buildCompilationUnit(top));
 		this.context = context;
-		this.log = Log.instance(context);
-		this.errorLogger = ErrorLog.create(messager, log);
+		this.errorLogger = errorLog;
 		this.elements = JavacElements.instance(context);
 		this.treeMaker = new JavacTreeMaker(TreeMaker.instance(context));
 		this.symtab = Symtab.instance(context);
@@ -415,6 +415,18 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 		JCANNOTATEDTYPE_FIELDS_INITIALIZED = true;
 	}
 	
+	
+	private static Field JCENHANCEDFORLOOP_VARORRECORDPATTERN_FIELD = Permit.permissiveGetField(JCEnhancedForLoop.class, "varOrRecordPattern");
+	private static JCTree getVarOrRecordPattern(JCEnhancedForLoop loop) {
+		if (JCENHANCEDFORLOOP_VARORRECORDPATTERN_FIELD == null) {
+			return loop.var;
+		}
+		try {
+			return (JCTree) JCENHANCEDFORLOOP_VARORRECORDPATTERN_FIELD.get(loop);
+		} catch (Exception ignore) {}
+		return null;
+	}
+	
 	private JavacNode buildTry(JCTry tryNode) {
 		if (setAndGetAsHandled(tryNode)) return null;
 		List<JavacNode> childNodes = new ArrayList<JavacNode>();
@@ -471,6 +483,7 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 		if (statement instanceof JCVariableDecl) return buildLocalVar((JCVariableDecl) statement, Kind.LOCAL);
 		if (statement instanceof JCTry) return buildTry((JCTry) statement);
 		if (statement.getClass().getName().equals("com.sun.tools.javac.tree.JCTree$JCLambda")) return buildLambda(statement);
+		if (statement instanceof JCEnhancedForLoop) return buildEnhancedForLoop((JCEnhancedForLoop) statement);
 		if (setAndGetAsHandled(statement)) return null;
 		
 		return drill(statement);
@@ -498,6 +511,18 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 		}
 		getBodyMethods.putIfAbsent(c, m);
 		return getBodyMethods.get(c);
+	}
+	
+	private JavacNode buildEnhancedForLoop(JCEnhancedForLoop loop) {
+		if (setAndGetAsHandled(loop)) return null;
+		
+		List<JavacNode> childNodes = new ArrayList<JavacNode>();
+		// The order of the child elements is important and must be kept
+		addIfNotNull(childNodes, buildTree(getVarOrRecordPattern(loop), Kind.STATEMENT));
+		addIfNotNull(childNodes, buildTree(loop.expr, Kind.STATEMENT));
+		addIfNotNull(childNodes, buildStatement(loop.body));
+		
+		return putInMap(new JavacNode(this, loop, childNodes, Kind.STATEMENT));
 	}
 	
 	private JavacNode drill(JCTree statement) {
@@ -545,7 +570,7 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 		JCCompilationUnit top = (JCCompilationUnit) top().get();
 		newSource = top.sourcefile;
 		if (newSource != null) {
-			oldSource = log.useSource(newSource);
+			oldSource = errorLogger.useSource(newSource);
 			if (pos == null) pos = astObject.pos();
 		}
 		if (pos != null && node != null && attemptToRemoveErrorsInRange) {
@@ -568,7 +593,7 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 				break;
 			}
 		} finally {
-			if (newSource != null) log.useSource(oldSource);
+			if (newSource != null) errorLogger.useSource(oldSource);
 		}
 	}
 
@@ -619,6 +644,10 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 			this.warningCount = warningCount;
 		}
 
+		final JavaFileObject useSource(JavaFileObject file) {
+			return log.useSource(file);
+		}
+
 		final void error(DiagnosticPosition pos, String message) {
 			increment(errorCount);
 			error1(pos, message);
@@ -649,12 +678,13 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 			}
 		}
 		
-		static ErrorLog create(Messager messager, Log log) {
+		static ErrorLog create(Messager messager, Context context) {
 			Field errorCount; try {
 				errorCount = Permit.getField(messager.getClass(), "errorCount");
 			} catch (Throwable t) {
 				errorCount = null;
 			}
+			Log log = Log.instance(context);
 			boolean hasMultipleErrors = false;
 			for (Field field : log.getClass().getFields()) {
 				if (field.getName().equals("multipleErrors")) {

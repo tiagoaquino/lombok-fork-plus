@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2021 The Project Lombok Authors.
+ * Copyright (C) 2016-2024 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -92,6 +92,7 @@ import com.sun.tools.javac.util.Name;
 import com.sun.tools.javac.util.Position;
 
 import lombok.javac.CommentInfo;
+import lombok.javac.Javac;
 import lombok.javac.PackageName;
 import lombok.permit.Permit;
 import lombok.javac.CommentInfo.EndConnection;
@@ -260,6 +261,14 @@ public class PrettyPrinter extends JCTree.Visitor {
 		}
 		
 		return false;
+	}
+	
+	private void print(Name name) {
+		if (name.isEmpty()) {
+			print("_");
+		} else {
+			print(name.toString());
+		}
 	}
 	
 	private void print(CharSequence s) {
@@ -485,8 +494,9 @@ public class PrettyPrinter extends JCTree.Visitor {
 	}
 	
 	@Override public void visitImport(JCImport tree) {
-		if (tree.qualid instanceof JCFieldAccess) {
-			JCFieldAccess fa = ((JCFieldAccess) tree.qualid);
+		JCTree qualid = Javac.getQualid(tree);
+		if (qualid instanceof JCFieldAccess) {
+			JCFieldAccess fa = ((JCFieldAccess) qualid);
 			if (fa.name.length() == 1 && fa.name.contentEquals("*")) {
 				if (fa.selected instanceof JCFieldAccess) {
 					JCFieldAccess lombokExperimental = (JCFieldAccess) fa.selected;
@@ -500,7 +510,7 @@ public class PrettyPrinter extends JCTree.Visitor {
 		
 		aPrint("import ");
 		if (tree.staticImport) print("static ");
-		print(tree.qualid);
+		print(qualid);
 		println(";", tree);
 	}
 	
@@ -1253,7 +1263,14 @@ public class PrettyPrinter extends JCTree.Visitor {
 	
 	@Override public void visitForeachLoop(JCEnhancedForLoop tree) {
 		aPrint("for (");
-		printVarDefInline(tree.var);
+		JCTree varOrRecordPattern = readObject(tree, "varOrRecordPattern", null);
+		if (varOrRecordPattern instanceof JCVariableDecl) {
+			printVarDefInline((JCVariableDecl) varOrRecordPattern);
+		} else if (varOrRecordPattern != null) {
+			print(varOrRecordPattern);
+		} else {
+			printVarDefInline(tree.var);
+		}
 		print(" : ");
 		print(tree.expr);
 		print(") ");
@@ -1346,6 +1363,12 @@ public class PrettyPrinter extends JCTree.Visitor {
 		} else {
 			aPrint("case ");
 			print(pats, ", ");
+			
+			JCExpression guard = readObject(tree, "guard", null); // JDK 21+
+			if (guard != null) {
+				print(" when ");
+				print(guard);
+			}
 		}
 		
 		Enum<?> caseKind = readObject(tree, "caseKind", null); // JDK 12+
@@ -1427,9 +1450,13 @@ public class PrettyPrinter extends JCTree.Visitor {
 	
 	void printBindingPattern(JCTree tree) {
 		JCTree var = readObject(tree, "var", tree);
-		print((JCExpression) readObject(var, "vartype", null));
-		print(" ");
-		print((Name) readObject(var, "name", null));
+		if (var instanceof JCVariableDecl) {
+			printVarDef0((JCVariableDecl) var);
+		} else {
+			print((JCExpression) readObject(var, "vartype", null));
+			print(" ");
+			print((Name) readObject(var, "name", null));
+		}
 	}
 	
 	void printDefaultCase(JCTree tree) {
@@ -1446,6 +1473,31 @@ public class PrettyPrinter extends JCTree.Visitor {
 		print("(");
 		print((JCTree) readObject(tree, "pattern", null));
 		print(")");
+	}
+	
+	void printConstantCaseLabel(JCTree tree) {
+		print((JCTree) readObject(tree, "expr", null));
+	}
+	
+	void printPatternCaseLabel(JCTree tree) {
+		print((JCTree) readObject(tree, "pat", null));
+		JCTree guard = readObject(tree, "guard", null);
+		if (guard != null) {
+			print(" when ");
+			print(guard);
+		}
+	}
+	
+	void printRecordPattern(JCTree tree) {
+		print((JCTree) readObject(tree, "deconstructor", null));
+		print("(");
+		print(readObject(tree, "nested", List.<JCTree>nil()), ", ");
+		print(")");
+		JCVariableDecl var = readObject(tree, "var", null);
+		if (var != null) {
+			print(" ");
+			print(var.name);
+		}
 	}
 	
 	@Override public void visitTry(JCTry tree) {
@@ -1672,6 +1724,14 @@ public class PrettyPrinter extends JCTree.Visitor {
 			printGuardPattern(tree);
 		} else if (className.endsWith("$JCParenthesizedPattern")) { // Introduced in JDK17
 			printParenthesizedPattern(tree);
+		} else if (className.endsWith("$JCConstantCaseLabel")) { // Introduced in JDK19
+			printConstantCaseLabel(tree);
+		} else if (className.endsWith("$JCPatternCaseLabel")) { // Introduced in JDK19
+			printPatternCaseLabel(tree);
+		} else if (className.endsWith("$JCRecordPattern")) { // Introduced in JDK19
+			printRecordPattern(tree);
+		} else if (className.endsWith("$JCAnyPattern")) { // Introduced in JDK22
+			print("_");
 		} else {
 			throw new AssertionError("Unhandled tree type: " + tree.getClass() + ": " + tree);
 		}
