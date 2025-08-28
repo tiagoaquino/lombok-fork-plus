@@ -63,6 +63,7 @@ public class EclipsePatcher implements AgentLauncher.AgentLaunchable {
 					if (loader.getClass().getName().startsWith("org.sonar.classloader.")) return false; // Relevant to bug #2351
 					if (loader.toString().contains("com.alexnederlof:jasperreports-plugin")) return false; //Relevant to bug #1036
 					if (loader.toString().contains("com.pro-crafting.tools:jasperreports-plugin")) return false; //Relevant to bug #1036
+					if (loader.toString().contains("com.pro-crafting.tools:jasperreports-maven-plugin")) return false; //Relevant to bug #1036
 				}
 				if (!(loader instanceof URLClassLoader)) return true;
 				ClassLoader parent = loader.getParent();
@@ -95,6 +96,7 @@ public class EclipsePatcher implements AgentLauncher.AgentLaunchable {
 		patchSyntaxAndOccurrencesHighlighting(sm);
 		patchSortMembersOperation(sm);
 		patchExtractInterfaceAndPullUp(sm);
+		patchExtractVariable(sm);
 		patchAboutDialog(sm);
 		patchEclipseDebugPatches(sm);
 		patchJavadoc(sm);
@@ -220,6 +222,17 @@ public class EclipsePatcher implements AgentLauncher.AgentLaunchable {
 				.target(new MethodTarget("org.eclipse.jdt.internal.corext.refactoring.structure.ImportRemover", "registerRemovedNode", "void", "org.eclipse.jdt.core.dom.ASTNode"))
 				.decisionMethod(new Hook("lombok.launch.PatchFixesHider$PatchFixes", "isGenerated", "boolean", "org.eclipse.jdt.core.dom.ASTNode"))
 				.request(StackRequest.PARAM1)
+				.transplant()
+				.build());
+	}
+	
+	private static void patchExtractVariable(ScriptManager sm) {
+		/* Fix sourceEnding for generated nodes to avoid null pointer */
+		sm.addScriptIfWitness(OSGI_TYPES, ScriptBuilder.replaceMethodCall()
+				.target(new MethodTarget("org.eclipse.jdt.internal.corext.refactoring.util.SideEffectChecker", "findFunctionDefinition", "org.eclipse.jdt.core.dom.MethodDeclaration", "org.eclipse.jdt.core.dom.ITypeBinding", "org.eclipse.jdt.core.dom.IMethodBinding"))
+				.methodToReplace(new Hook("org.eclipse.jdt.core.dom.NodeFinder", "perform", "org.eclipse.jdt.core.dom.ASTNode", "org.eclipse.jdt.core.dom.ASTNode", "org.eclipse.jdt.core.ISourceRange"))
+				.replacementMethod(new Hook("lombok.launch.PatchFixesHider$PatchFixes", "findGeneratedNode", "org.eclipse.jdt.core.dom.ASTNode", "org.eclipse.jdt.core.dom.ASTNode", "org.eclipse.jdt.core.ISourceRange", "org.eclipse.jdt.core.dom.IMethodBinding"))
+				.requestExtra(StackRequest.PARAM2)
 				.transplant()
 				.build());
 	}
@@ -874,6 +887,14 @@ public class EclipsePatcher implements AgentLauncher.AgentLaunchable {
 				.target(new MethodTarget(SOURCE_TYPE_CONVERTER_SIG, "convertAnnotations", ANNOTATION_SIG + "[]", I_ANNOTATABLE_SIG))
 				.wrapMethod(new Hook("lombok.launch.PatchFixesHider$PatchFixes", "convertAnnotations", ANNOTATION_SIG + "[]", ANNOTATION_SIG + "[]", I_ANNOTATABLE_SIG))
 				.request(StackRequest.PARAM1, StackRequest.RETURN_VALUE).build());
+		
+		sm.addScriptIfWitness(OSGI_TYPES, ScriptBuilder.exitEarly()
+				.target(new MethodTarget(SOURCE_TYPE_CONVERTER_SIG, "parseMemberValue", "org.eclipse.jdt.internal.compiler.ast.Expression", "char[]"))
+				.decisionMethod(new Hook("lombok.launch.PatchFixesHider$PatchFixes", "isEmpty", "boolean", "char[]"))
+				.valueMethod(new Hook("lombok.launch.PatchFixesHider$PatchFixes", "returnNullExpression", "org.eclipse.jdt.internal.compiler.ast.Expression", "java.lang.Object"))
+				.request(StackRequest.PARAM1)
+				.transplant()
+				.build());
 	}
 	
 	private static void patchEclipseDebugPatches(ScriptManager sm) {
