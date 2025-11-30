@@ -1,5 +1,5 @@
 <ivy-module version="2.0">
-	<info organisation="org.projectlombok" module="lombok-plus" />
+	<info organisation="projectlombok.org" module="lombok" />
 	<configurations>
 		<!-- dependencies for the build itself, such as tools to create the website or deploy to servers. -->
 		<conf name="buildtools" />
@@ -35,15 +35,9 @@
 		
 		<conf name="mapstruct" />
 	</configurations>
-    <publications>
-		<artifact name="lombok-${lombok.version}-javadoc" type="javadoc" ext="jar"/>
-		<artifact name="lombok-${lombok.version}-sources" type="sources" ext="jar"/>
-		<artifact name="lombok-${lombok.version}" type="" ext="jar" />
-		<artifact name="lombok-${lombok.version}" type="" ext="pom"/>
-	</publications>
 	<dependencies>
 		
-		<dependency org="org.projectlombok" name="lombok.patcher" rev="0.54" conf="build,stripe->default" />
+		<dependency org="org.projectlombok" name="lombok.patcher" rev="0.56" conf="build,stripe->default" />
 		<dependency org="zwitserloot.com" name="cmdreader" rev="1.2" conf="build,stripe->runtime" />
 		<dependency org="org.apache.ant" name="ant" rev="1.10.5" conf="build->default" />
 		<dependency org="org.apache.ant" name="ant-junit" rev="1.10.5" conf="build->default" />

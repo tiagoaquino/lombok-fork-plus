@@ -1,6 +1,18 @@
 Lombok Changelog
 ----------------
 
+### v1.18.42 (September 18th, 2025)
+* FEATURE: All the various `@Log` annotations now allow you to change their access level (they still default to `private`). [#2280](https://github.com/projectlombok/lombok/issues/2280). Thanks to new contributor Liam Pace!
+* BUGFIX: Javadoc parsing was broken in Netbeans and ErrorProne for JDK25 [#3940](https://github.com/projectlombok/lombok/issues/3940).
+
+### v1.18.40 (September 4th, 2025)
+* PLATFORM: JDK25 support added [#3859](https://github.com/projectlombok/lombok/issues/3859).
+* BUGFIX: Recent versions of eclipse (or the eclipse-based java lang server for VSCode) caused `java.lang.IllegalArgumentException: Document does not match the AST`. [Issue #3886](https://github.com/projectlombok/lombok/issues/3886).
+* PERFORMANCE: `@ExtensionMethod` is now significantly faster [Issue #3866](https://github.com/projectlombok/lombok/issues/3866).
+* BUGFIX: the command line `config` tool would emit incorrect output for nullity annotations. [Issue #3931](https://github.com/projectlombok/lombok/issues/3931).
+* FEATURE: `@Jacksonized @Accessors(fluent=true)` automatically creates the relevant annotations such that Jackson correctly identifies fluent accessors. [Issue #3265](https://github.com/projectlombok/lombok/issues/3265), [Issue #3270](https://github.com/projectlombok/lombok/issues/3270).
+* IMPROBABLE BREAKING CHANGE: From versions 1.18.16 to 1.18.38, lombok automatically copies certain Jackson annotations (e.g., `@JsonProperty`) from fields to the corresponding accessors (getters/setters). However, it turned out to be harmful in certain situations. Thus, Lombok does not automatically copy those annotations any more. You can restore the old behavior using the [config key](https://projectlombok.org/features/configuration) `lombok.copyJacksonAnnotationsToAccessors = true`.
+
 ### v1.18.38 (March 31st, 2025)
 * PLATFORM: JDK24 support added.
 * FEATURE: Lombok's nullity annotation now supports [JSpecify](https://jspecify.dev) out of the box, using [config key](https://projectlombok.org/features/configuration) `jspecify`.
