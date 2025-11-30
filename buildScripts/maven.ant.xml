@@ -66,6 +66,19 @@ This buildfile is part of projectlombok.org. It makes maven-compatible repositor
 		
 		<maven.make version-name="${lombok.version}" />
 	</target>
+
+    <target name="config-myrepo-url" unless="myrepo.url">
+		<input message="What is your private MyMavenRepo write URL? (Enter to abort)." addproperty="myrepo.url" />
+		<condition property="myrepo.urlBlank"><equals arg1="${myrepo.url}" arg2="" trim="true" /></condition>
+		<fail if="myrepo.urlBlank">Aborted.</fail>
+	</target>
+
+	<target name="my-repo-publish" depends="config-myrepo-url, maven" description="Upload to My Repo Maven">
+		<copy tofile="dist/lombok-${lombok.version}.pom" overwrite="true" file="build/lombok-${lombok.version}.pom"></copy>
+	    <ivy:publish resolver="my-maven-repo" overwrite="true" pubrevision="${lombok.version}" publishivy="false">
+	    	<artifacts pattern="dist/[artifact].[ext]"/>
+	    </ivy:publish>
+	</target>
 	
 	<target name="maven.publish" depends="maven, -setup.mavenCentral">
 		<fail>

@@ -1,20 +1,64 @@
-# Project Lombok
+# Lombok Plus
+
+## This project will provide some customs extensions to lombok project (<https://projectlombok.org/>)
 
 **Project Lombok** is a java library that automatically plugs into your editor and build tools, spicing up your java.
 Never write another getter or equals method again, with one annotation your class has a fully featured builder, automate your logging variables, and much more.
 
-See [LICENSE] for the Project Lombok license.
+- `With Lombok`
 
-Looking for professional support of Project Lombok? Lombok is now part of a [tidelift subscription]!
+  ```java
+  package com.github.tiagoaquino.dto;
 
-For a list of all authors, see the [AUTHORS] file. 
+  @Resolver
+  public class TestDTO {
 
-For complete project information, a short tutorial on what lombok does, and how to download / use / install it, see [projectlombok.org]
+      public Long id;
 
-You can review our security policy via [SECURITY.md]
+      public String name;
 
-[LICENSE]: https://github.com/projectlombok/lombok/blob/master/LICENSE
-[AUTHORS]: https://github.com/projectlombok/lombok/blob/master/AUTHORS
-[SECURITY.md]: https://github.com/projectlombok/lombok/blob/master/SECURITY.md
-[projectlombok.org]: https://projectlombok.org/
-[tidelift subscription]: https://tidelift.com/subscription/pkg/maven-org-projectlombok-lombok?utm_source=maven-org-projectlombok-lombok&utm_medium=referral&campaign=website
+  }
+  ```
+
+- `Vanilla Java`
+
+    ```java
+    package com.github.tiagoaquino.dto;
+
+    
+    public class TestDTO {
+
+        public Long id;
+
+        public String name;
+
+        public void resolveId(java.util.function.Supplier<Long> id) {
+            this.id = id.get();
+        }
+
+        public void resolveName(java.util.function.Supplier<String> name) {
+            this.name = name.get();
+        }
+
+    }
+    ```
+
+## Use it in `maven`
+
+```xml
+<repositories>
+    <repository>
+        <id>lombok-plus-repository</id>
+        <url>https://mymavenrepo.com/repo/i6snxdlhoCnIrcRNt98A/</url>
+    </repository>
+</repositories>
+
+<dependencies>
+    <dependency>
+        <groupId>org.projectlombok</groupId>
+        <artifactId>lombok-plus</artifactId>
+        <version>1.18.42</version>
+        <scope>provided</scope>
+    </dependency>
+</dependencies>
+```
